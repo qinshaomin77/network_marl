@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<configuration>
+    <input>
+        <net-file value="grid_5x5.net.xml"/>
+        <route-files value="grid_5x5.rou.xml"/>
+        <additional-files value="grid_5x5.add.xml"/>
+    </input>
+    <output>
+        <summary-output value="summary.xml"/>
+        <tripinfo-output value="tripinfo.xml"/>
+        <vehroute-output value="vehroutes.xml"/>
+        <fcd-output value="fcd.xml"/>
+    </output>
+    <time>
+        <begin value="0"/>
+        <end value="3600"/>
+    </time>
+    <processing>
+        <time-to-teleport value="-1"/>
+    </processing>
+</configuration>

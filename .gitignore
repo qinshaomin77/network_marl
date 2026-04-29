@@ -1,0 +1,28 @@
+# 排除结果文件夹
+results/
+
+# 排除大型数据文件
+network_grid/detector_output.xml
+
+# Python 缓存
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+
+# IDE 配置
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 环境
+.env
+venv/
+env/

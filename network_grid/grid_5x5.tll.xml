@@ -1,0 +1,254 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<additional>
+    <tlLogic id="nt00" type="static" programID="0" offset="0">
+        <phase duration="30" state="gGrgrrgGrgrr" name="sn_straight"/>
+        <phase duration="2" state="gyrgrrgyrgrr" name="sn_straight_yellow"/>
+        <phase duration="30" state="grGgrrgrGgrr" name="sn_left"/>
+        <phase duration="2" state="grygrrgrygrr" name="sn_left_yellow"/>
+        <phase duration="30" state="grrgGrgrrgGr" name="ew_straight"/>
+        <phase duration="2" state="grrgyrgrrgyr" name="ew_straight_yellow"/>
+        <phase duration="30" state="grrgrGgrrgrG" name="ew_left"/>
+        <phase duration="2" state="grrgrygrrgry" name="ew_left_yellow"/>
+    </tlLogic>
+    <tlLogic id="nt01" type="static" programID="0" offset="10">
+        <phase duration="30" state="gGrgrrgGrgrr" name="sn_straight"/>
+        <phase duration="2" state="gyrgrrgyrgrr" name="sn_straight_yellow"/>
+        <phase duration="30" state="grGgrrgrGgrr" name="sn_left"/>
+        <phase duration="2" state="grygrrgrygrr" name="sn_left_yellow"/>
+        <phase duration="30" state="grrgGrgrrgGr" name="ew_straight"/>
+        <phase duration="2" state="grrgyrgrrgyr" name="ew_straight_yellow"/>
+        <phase duration="30" state="grrgrGgrrgrG" name="ew_left"/>
+        <phase duration="2" state="grrgrygrrgry" name="ew_left_yellow"/>
+    </tlLogic>
+    <tlLogic id="nt02" type="static" programID="0" offset="20">
+        <phase duration="30" state="gGrgrrgGrgrr" name="sn_straight"/>
+        <phase duration="2" state="gyrgrrgyrgrr" name="sn_straight_yellow"/>
+        <phase duration="30" state="grGgrrgrGgrr" name="sn_left"/>
+        <phase duration="2" state="grygrrgrygrr" name="sn_left_yellow"/>
+        <phase duration="30" state="grrgGrgrrgGr" name="ew_straight"/>
+        <phase duration="2" state="grrgyrgrrgyr" name="ew_straight_yellow"/>
+        <phase duration="30" state="grrgrGgrrgrG" name="ew_left"/>
+        <phase duration="2" state="grrgrygrrgry" name="ew_left_yellow"/>
+    </tlLogic>
+    <tlLogic id="nt03" type="static" programID="0" offset="30">
+        <phase duration="30" state="gGrgrrgGrgrr" name="sn_straight"/>
+        <phase duration="2" state="gyrgrrgyrgrr" name="sn_straight_yellow"/>
+        <phase duration="30" state="grGgrrgrGgrr" name="sn_left"/>
+        <phase duration="2" state="grygrrgrygrr" name="sn_left_yellow"/>
+        <phase duration="30" state="grrgGrgrrgGr" name="ew_straight"/>
+        <phase duration="2" state="grrgyrgrrgyr" name="ew_straight_yellow"/>
+        <phase duration="30" state="grrgrGgrrgrG" name="ew_left"/>
+        <phase duration="2" state="grrgrygrrgry" name="ew_left_yellow"/>
+    </tlLogic>
+    <tlLogic id="nt04" type="static" programID="0" offset="40">
+        <phase duration="30" state="gGrgrrgGrgrr" name="sn_straight"/>
+        <phase duration="2" state="gyrgrrgyrgrr" name="sn_straight_yellow"/>
+        <phase duration="30" state="grGgrrgrGgrr" name="sn_left"/>
+        <phase duration="2" state="grygrrgrygrr" name="sn_left_yellow"/>
+        <phase duration="30" state="grrgGrgrrgGr" name="ew_straight"/>
+        <phase duration="2" state="grrgyrgrrgyr" name="ew_straight_yellow"/>
+        <phase duration="30" state="grrgrGgrrgrG" name="ew_left"/>
+        <phase duration="2" state="grrgrygrrgry" name="ew_left_yellow"/>
+    </tlLogic>
+    <tlLogic id="nt10" type="static" programID="0" offset="10">
+        <phase duration="30" state="gGrgrrgGrgrr" name="sn_straight"/>
+        <phase duration="2" state="gyrgrrgyrgrr" name="sn_straight_yellow"/>
+        <phase duration="30" state="grGgrrgrGgrr" name="sn_left"/>
+        <phase duration="2" state="grygrrgrygrr" name="sn_left_yellow"/>
+        <phase duration="30" state="grrgGrgrrgGr" name="ew_straight"/>
+        <phase duration="2" state="grrgyrgrrgyr" name="ew_straight_yellow"/>
+        <phase duration="30" state="grrgrGgrrgrG" name="ew_left"/>
+        <phase duration="2" state="grrgrygrrgry" name="ew_left_yellow"/>
+    </tlLogic>
+    <tlLogic id="nt11" type="static" programID="0" offset="20">
+        <phase duration="30" state="gGrgrrgGrgrr" name="sn_straight"/>
+        <phase duration="2" state="gyrgrrgyrgrr" name="sn_straight_yellow"/>
+        <phase duration="30" state="grGgrrgrGgrr" name="sn_left"/>
+        <phase duration="2" state="grygrrgrygrr" name="sn_left_yellow"/>
+        <phase duration="30" state="grrgGrgrrgGr" name="ew_straight"/>
+        <phase duration="2" state="grrgyrgrrgyr" name="ew_straight_yellow"/>
+        <phase duration="30" state="grrgrGgrrgrG" name="ew_left"/>
+        <phase duration="2" state="grrgrygrrgry" name="ew_left_yellow"/>
+    </tlLogic>
+    <tlLogic id="nt12" type="static" programID="0" offset="30">
+        <phase duration="30" state="gGrgrrgGrgrr" name="sn_straight"/>
+        <phase duration="2" state="gyrgrrgyrgrr" name="sn_straight_yellow"/>
+        <phase duration="30" state="grGgrrgrGgrr" name="sn_left"/>
+        <phase duration="2" state="grygrrgrygrr" name="sn_left_yellow"/>
+        <phase duration="30" state="grrgGrgrrgGr" name="ew_straight"/>
+        <phase duration="2" state="grrgyrgrrgyr" name="ew_straight_yellow"/>
+        <phase duration="30" state="grrgrGgrrgrG" name="ew_left"/>
+        <phase duration="2" state="grrgrygrrgry" name="ew_left_yellow"/>
+    </tlLogic>
+    <tlLogic id="nt13" type="static" programID="0" offset="40">
+        <phase duration="30" state="gGrgrrgGrgrr" name="sn_straight"/>
+        <phase duration="2" state="gyrgrrgyrgrr" name="sn_straight_yellow"/>
+        <phase duration="30" state="grGgrrgrGgrr" name="sn_left"/>
+        <phase duration="2" state="grygrrgrygrr" name="sn_left_yellow"/>
+        <phase duration="30" state="grrgGrgrrgGr" name="ew_straight"/>
+        <phase duration="2" state="grrgyrgrrgyr" name="ew_straight_yellow"/>
+        <phase duration="30" state="grrgrGgrrgrG" name="ew_left"/>
+        <phase duration="2" state="grrgrygrrgry" name="ew_left_yellow"/>
+    </tlLogic>
+    <tlLogic id="nt14" type="static" programID="0" offset="50">
+        <phase duration="30" state="gGrgrrgGrgrr" name="sn_straight"/>
+        <phase duration="2" state="gyrgrrgyrgrr" name="sn_straight_yellow"/>
+        <phase duration="30" state="grGgrrgrGgrr" name="sn_left"/>
+        <phase duration="2" state="grygrrgrygrr" name="sn_left_yellow"/>
+        <phase duration="30" state="grrgGrgrrgGr" name="ew_straight"/>
+        <phase duration="2" state="grrgyrgrrgyr" name="ew_straight_yellow"/>
+        <phase duration="30" state="grrgrGgrrgrG" name="ew_left"/>
+        <phase duration="2" state="grrgrygrrgry" name="ew_left_yellow"/>
+    </tlLogic>
+    <tlLogic id="nt20" type="static" programID="0" offset="20">
+        <phase duration="30" state="gGrgrrgGrgrr" name="sn_straight"/>
+        <phase duration="2" state="gyrgrrgyrgrr" name="sn_straight_yellow"/>
+        <phase duration="30" state="grGgrrgrGgrr" name="sn_left"/>
+        <phase duration="2" state="grygrrgrygrr" name="sn_left_yellow"/>
+        <phase duration="30" state="grrgGrgrrgGr" name="ew_straight"/>
+        <phase duration="2" state="grrgyrgrrgyr" name="ew_straight_yellow"/>
+        <phase duration="30" state="grrgrGgrrgrG" name="ew_left"/>
+        <phase duration="2" state="grrgrygrrgry" name="ew_left_yellow"/>
+    </tlLogic>
+    <tlLogic id="nt21" type="static" programID="0" offset="30">
+        <phase duration="30" state="gGrgrrgGrgrr" name="sn_straight"/>
+        <phase duration="2" state="gyrgrrgyrgrr" name="sn_straight_yellow"/>
+        <phase duration="30" state="grGgrrgrGgrr" name="sn_left"/>
+        <phase duration="2" state="grygrrgrygrr" name="sn_left_yellow"/>
+        <phase duration="30" state="grrgGrgrrgGr" name="ew_straight"/>
+        <phase duration="2" state="grrgyrgrrgyr" name="ew_straight_yellow"/>
+        <phase duration="30" state="grrgrGgrrgrG" name="ew_left"/>
+        <phase duration="2" state="grrgrygrrgry" name="ew_left_yellow"/>
+    </tlLogic>
+    <tlLogic id="nt22" type="static" programID="0" offset="40">
+        <phase duration="30" state="gGrgrrgGrgrr" name="sn_straight"/>
+        <phase duration="2" state="gyrgrrgyrgrr" name="sn_straight_yellow"/>
+        <phase duration="30" state="grGgrrgrGgrr" name="sn_left"/>
+        <phase duration="2" state="grygrrgrygrr" name="sn_left_yellow"/>
+        <phase duration="30" state="grrgGrgrrgGr" name="ew_straight"/>
+        <phase duration="2" state="grrgyrgrrgyr" name="ew_straight_yellow"/>
+        <phase duration="30" state="grrgrGgrrgrG" name="ew_left"/>
+        <phase duration="2" state="grrgrygrrgry" name="ew_left_yellow"/>
+    </tlLogic>
+    <tlLogic id="nt23" type="static" programID="0" offset="50">
+        <phase duration="30" state="gGrgrrgGrgrr" name="sn_straight"/>
+        <phase duration="2" state="gyrgrrgyrgrr" name="sn_straight_yellow"/>
+        <phase duration="30" state="grGgrrgrGgrr" name="sn_left"/>
+        <phase duration="2" state="grygrrgrygrr" name="sn_left_yellow"/>
+        <phase duration="30" state="grrgGrgrrgGr" name="ew_straight"/>
+        <phase duration="2" state="grrgyrgrrgyr" name="ew_straight_yellow"/>
+        <phase duration="30" state="grrgrGgrrgrG" name="ew_left"/>
+        <phase duration="2" state="grrgrygrrgry" name="ew_left_yellow"/>
+    </tlLogic>
+    <tlLogic id="nt24" type="static" programID="0" offset="60">
+        <phase duration="30" state="gGrgrrgGrgrr" name="sn_straight"/>
+        <phase duration="2" state="gyrgrrgyrgrr" name="sn_straight_yellow"/>
+        <phase duration="30" state="grGgrrgrGgrr" name="sn_left"/>
+        <phase duration="2" state="grygrrgrygrr" name="sn_left_yellow"/>
+        <phase duration="30" state="grrgGrgrrgGr" name="ew_straight"/>
+        <phase duration="2" state="grrgyrgrrgyr" name="ew_straight_yellow"/>
+        <phase duration="30" state="grrgrGgrrgrG" name="ew_left"/>
+        <phase duration="2" state="grrgrygrrgry" name="ew_left_yellow"/>
+    </tlLogic>
+    <tlLogic id="nt30" type="static" programID="0" offset="30">
+        <phase duration="30" state="gGrgrrgGrgrr" name="sn_straight"/>
+        <phase duration="2" state="gyrgrrgyrgrr" name="sn_straight_yellow"/>
+        <phase duration="30" state="grGgrrgrGgrr" name="sn_left"/>
+        <phase duration="2" state="grygrrgrygrr" name="sn_left_yellow"/>
+        <phase duration="30" state="grrgGrgrrgGr" name="ew_straight"/>
+        <phase duration="2" state="grrgyrgrrgyr" name="ew_straight_yellow"/>
+        <phase duration="30" state="grrgrGgrrgrG" name="ew_left"/>
+        <phase duration="2" state="grrgrygrrgry" name="ew_left_yellow"/>
+    </tlLogic>
+    <tlLogic id="nt31" type="static" programID="0" offset="40">
+        <phase duration="30" state="gGrgrrgGrgrr" name="sn_straight"/>
+        <phase duration="2" state="gyrgrrgyrgrr" name="sn_straight_yellow"/>
+        <phase duration="30" state="grGgrrgrGgrr" name="sn_left"/>
+        <phase duration="2" state="grygrrgrygrr" name="sn_left_yellow"/>
+        <phase duration="30" state="grrgGrgrrgGr" name="ew_straight"/>
+        <phase duration="2" state="grrgyrgrrgyr" name="ew_straight_yellow"/>
+        <phase duration="30" state="grrgrGgrrgrG" name="ew_left"/>
+        <phase duration="2" state="grrgrygrrgry" name="ew_left_yellow"/>
+    </tlLogic>
+    <tlLogic id="nt32" type="static" programID="0" offset="50">
+        <phase duration="30" state="gGrgrrgGrgrr" name="sn_straight"/>
+        <phase duration="2" state="gyrgrrgyrgrr" name="sn_straight_yellow"/>
+        <phase duration="30" state="grGgrrgrGgrr" name="sn_left"/>
+        <phase duration="2" state="grygrrgrygrr" name="sn_left_yellow"/>
+        <phase duration="30" state="grrgGrgrrgGr" name="ew_straight"/>
+        <phase duration="2" state="grrgyrgrrgyr" name="ew_straight_yellow"/>
+        <phase duration="30" state="grrgrGgrrgrG" name="ew_left"/>
+        <phase duration="2" state="grrgrygrrgry" name="ew_left_yellow"/>
+    </tlLogic>
+    <tlLogic id="nt33" type="static" programID="0" offset="60">
+        <phase duration="30" state="gGrgrrgGrgrr" name="sn_straight"/>
+        <phase duration="2" state="gyrgrrgyrgrr" name="sn_straight_yellow"/>
+        <phase duration="30" state="grGgrrgrGgrr" name="sn_left"/>
+        <phase duration="2" state="grygrrgrygrr" name="sn_left_yellow"/>
+        <phase duration="30" state="grrgGrgrrgGr" name="ew_straight"/>
+        <phase duration="2" state="grrgyrgrrgyr" name="ew_straight_yellow"/>
+        <phase duration="30" state="grrgrGgrrgrG" name="ew_left"/>
+        <phase duration="2" state="grrgrygrrgry" name="ew_left_yellow"/>
+    </tlLogic>
+    <tlLogic id="nt34" type="static" programID="0" offset="70">
+        <phase duration="30" state="gGrgrrgGrgrr" name="sn_straight"/>
+        <phase duration="2" state="gyrgrrgyrgrr" name="sn_straight_yellow"/>
+        <phase duration="30" state="grGgrrgrGgrr" name="sn_left"/>
+        <phase duration="2" state="grygrrgrygrr" name="sn_left_yellow"/>
+        <phase duration="30" state="grrgGrgrrgGr" name="ew_straight"/>
+        <phase duration="2" state="grrgyrgrrgyr" name="ew_straight_yellow"/>
+        <phase duration="30" state="grrgrGgrrgrG" name="ew_left"/>
+        <phase duration="2" state="grrgrygrrgry" name="ew_left_yellow"/>
+    </tlLogic>
+    <tlLogic id="nt40" type="static" programID="0" offset="40">
+        <phase duration="30" state="gGrgrrgGrgrr" name="sn_straight"/>
+        <phase duration="2" state="gyrgrrgyrgrr" name="sn_straight_yellow"/>
+        <phase duration="30" state="grGgrrgrGgrr" name="sn_left"/>
+        <phase duration="2" state="grygrrgrygrr" name="sn_left_yellow"/>
+        <phase duration="30" state="grrgGrgrrgGr" name="ew_straight"/>
+        <phase duration="2" state="grrgyrgrrgyr" name="ew_straight_yellow"/>
+        <phase duration="30" state="grrgrGgrrgrG" name="ew_left"/>
+        <phase duration="2" state="grrgrygrrgry" name="ew_left_yellow"/>
+    </tlLogic>
+    <tlLogic id="nt41" type="static" programID="0" offset="50">
+        <phase duration="30" state="gGrgrrgGrgrr" name="sn_straight"/>
+        <phase duration="2" state="gyrgrrgyrgrr" name="sn_straight_yellow"/>
+        <phase duration="30" state="grGgrrgrGgrr" name="sn_left"/>
+        <phase duration="2" state="grygrrgrygrr" name="sn_left_yellow"/>
+        <phase duration="30" state="grrgGrgrrgGr" name="ew_straight"/>
+        <phase duration="2" state="grrgyrgrrgyr" name="ew_straight_yellow"/>
+        <phase duration="30" state="grrgrGgrrgrG" name="ew_left"/>
+        <phase duration="2" state="grrgrygrrgry" name="ew_left_yellow"/>
+    </tlLogic>
+    <tlLogic id="nt42" type="static" programID="0" offset="60">
+        <phase duration="30" state="gGrgrrgGrgrr" name="sn_straight"/>
+        <phase duration="2" state="gyrgrrgyrgrr" name="sn_straight_yellow"/>
+        <phase duration="30" state="grGgrrgrGgrr" name="sn_left"/>
+        <phase duration="2" state="grygrrgrygrr" name="sn_left_yellow"/>
+        <phase duration="30" state="grrgGrgrrgGr" name="ew_straight"/>
+        <phase duration="2" state="grrgyrgrrgyr" name="ew_straight_yellow"/>
+        <phase duration="30" state="grrgrGgrrgrG" name="ew_left"/>
+        <phase duration="2" state="grrgrygrrgry" name="ew_left_yellow"/>
+    </tlLogic>
+    <tlLogic id="nt43" type="static" programID="0" offset="70">
+        <phase duration="30" state="gGrgrrgGrgrr" name="sn_straight"/>
+        <phase duration="2" state="gyrgrrgyrgrr" name="sn_straight_yellow"/>
+        <phase duration="30" state="grGgrrgrGgrr" name="sn_left"/>
+        <phase duration="2" state="grygrrgrygrr" name="sn_left_yellow"/>
+        <phase duration="30" state="grrgGrgrrgGr" name="ew_straight"/>
+        <phase duration="2" state="grrgyrgrrgyr" name="ew_straight_yellow"/>
+        <phase duration="30" state="grrgrGgrrgrG" name="ew_left"/>
+        <phase duration="2" state="grrgrygrrgry" name="ew_left_yellow"/>
+    </tlLogic>
+    <tlLogic id="nt44" type="static" programID="0" offset="80">
+        <phase duration="30" state="gGrgrrgGrgrr" name="sn_straight"/>
+        <phase duration="2" state="gyrgrrgyrgrr" name="sn_straight_yellow"/>
+        <phase duration="30" state="grGgrrgrGgrr" name="sn_left"/>
+        <phase duration="2" state="grygrrgrygrr" name="sn_left_yellow"/>
+        <phase duration="30" state="grrgGrgrrgGr" name="ew_straight"/>
+        <phase duration="2" state="grrgyrgrrgyr" name="ew_straight_yellow"/>
+        <phase duration="30" state="grrgrGgrrgrG" name="ew_left"/>
+        <phase duration="2" state="grrgrygrrgry" name="ew_left_yellow"/>
+    </tlLogic>
+</additional>

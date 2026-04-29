@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<nodes>
+    <node id="nt00" x="0.00" y="0.00" type="traffic_light"/>
+    <node id="nt01" x="320.00" y="0.00" type="traffic_light"/>
+    <node id="nt02" x="640.00" y="0.00" type="traffic_light"/>
+    <node id="nt03" x="960.00" y="0.00" type="traffic_light"/>
+    <node id="nt04" x="1280.00" y="0.00" type="traffic_light"/>
+    <node id="nt10" x="0.00" y="320.00" type="traffic_light"/>
+    <node id="nt11" x="320.00" y="320.00" type="traffic_light"/>
+    <node id="nt12" x="640.00" y="320.00" type="traffic_light"/>
+    <node id="nt13" x="960.00" y="320.00" type="traffic_light"/>
+    <node id="nt14" x="1280.00" y="320.00" type="traffic_light"/>
+    <node id="nt20" x="0.00" y="640.00" type="traffic_light"/>
+    <node id="nt21" x="320.00" y="640.00" type="traffic_light"/>
+    <node id="nt22" x="640.00" y="640.00" type="traffic_light"/>
+    <node id="nt23" x="960.00" y="640.00" type="traffic_light"/>
+    <node id="nt24" x="1280.00" y="640.00" type="traffic_light"/>
+    <node id="nt30" x="0.00" y="960.00" type="traffic_light"/>
+    <node id="nt31" x="320.00" y="960.00" type="traffic_light"/>
+    <node id="nt32" x="640.00" y="960.00" type="traffic_light"/>
+    <node id="nt33" x="960.00" y="960.00" type="traffic_light"/>
+    <node id="nt34" x="1280.00" y="960.00" type="traffic_light"/>
+    <node id="nt40" x="0.00" y="1280.00" type="traffic_light"/>
+    <node id="nt41" x="320.00" y="1280.00" type="traffic_light"/>
+    <node id="nt42" x="640.00" y="1280.00" type="traffic_light"/>
+    <node id="nt43" x="960.00" y="1280.00" type="traffic_light"/>
+    <node id="nt44" x="1280.00" y="1280.00" type="traffic_light"/>
+    <node id="npN0" x="0.00" y="-750.00" type="priority"/>
+    <node id="npN1" x="320.00" y="-750.00" type="priority"/>
+    <node id="npN2" x="640.00" y="-750.00" type="priority"/>
+    <node id="npN3" x="960.00" y="-750.00" type="priority"/>
+    <node id="npN4" x="1280.00" y="-750.00" type="priority"/>
+    <node id="npS0" x="0.00" y="2030.00" type="priority"/>
+    <node id="npS1" x="320.00" y="2030.00" type="priority"/>
+    <node id="npS2" x="640.00" y="2030.00" type="priority"/>
+    <node id="npS3" x="960.00" y="2030.00" type="priority"/>
+    <node id="npS4" x="1280.00" y="2030.00" type="priority"/>
+    <node id="npE0" x="2030.00" y="0.00" type="priority"/>
+    <node id="npE1" x="2030.00" y="320.00" type="priority"/>
+    <node id="npE2" x="2030.00" y="640.00" type="priority"/>
+    <node id="npE3" x="2030.00" y="960.00" type="priority"/>
+    <node id="npE4" x="2030.00" y="1280.00" type="priority"/>
+    <node id="npW0" x="-750.00" y="0.00" type="priority"/>
+    <node id="npW1" x="-750.00" y="320.00" type="priority"/>
+    <node id="npW2" x="-750.00" y="640.00" type="priority"/>
+    <node id="npW3" x="-750.00" y="960.00" type="priority"/>
+    <node id="npW4" x="-750.00" y="1280.00" type="priority"/>
+</nodes>
