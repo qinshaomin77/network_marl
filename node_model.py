@@ -1,11 +1,4 @@
 # -*- coding: utf-8 -*-
-"""node_model.py
-Lower layer A2C agent.
-Revised design:
-- local lane/connection feature: [wave, speed_lack, truck_ratio, queue_ratio]
-- neighbor feature embedding is removed
-- neighbor input is only policy probability matrix [4, A]
-"""
 
 from __future__ import annotations
 from typing import Dict, Tuple, Optional, Any, List
@@ -17,7 +10,7 @@ from torch.distributions import Categorical
 
 from model_layers import orthogonal_init, _as_tensor, RelationGATLayer, LSTMCore
 
-
+# Encodes lane/connection-level local graph for one intersection.
 class LocalIntersectionGATEncoder(nn.Module):
     def __init__(self, config):
         super().__init__()
@@ -95,9 +88,8 @@ class LocalIntersectionGATEncoder(nn.Module):
             graph = torch.cat([self._masked_mean(H, lane_mask), self._masked_max(H, lane_mask)], dim=-1)
         return (graph, H) if return_node_embeds else graph
 
-
 class NeighborPolicyEncoder(nn.Module):
-    """Encode neighbor policy matrix [B,4,A] using mask + flatten + MLP."""
+    # Encodes neighbor policy matrix [4, A_max] into a fixed-size embedding.
 
     def __init__(self, config):
         super().__init__()
@@ -133,7 +125,6 @@ class NeighborPolicyEncoder(nn.Module):
                 M_act = F.pad(M_act, (0, self.a_max - M_act.shape[-1]))
             P = P * M_act
         return self.net(P.reshape(B, 4 * self.a_max))
-
 
 class LowerActorNet(nn.Module):
     def __init__(self, config):
@@ -172,7 +163,6 @@ class LowerActorNet(nn.Module):
             logits = logits.masked_fill(action_mask <= 0.0, -1e9)
         return logits, new_hidden
 
-
 class LowerCriticNet(nn.Module):
     def __init__(self, config):
         super().__init__()
@@ -204,17 +194,15 @@ class LowerCriticNet(nn.Module):
         h, new_hidden = self.lstm(z, hidden)
         return self.value_layer(h).squeeze(-1), new_hidden
 
-
 def _stack_obs_list(obs_list: List[Dict[str, Any]], device: torch.device) -> Dict[str, torch.Tensor]:
     keys = ["node_features", "A_same", "A_diff", "lane_exist_mask", "neighbor_dir_mask", "neighbor_policy_dir", "neighbor_policy_action_mask", "action_mask"]
     return {k: torch.stack([_as_tensor(o[k], device) for o in obs_list], dim=0) for k in keys}
 
-
 def _obs_dict_to_tensors(obs: Dict[str, Any], device: torch.device) -> Dict[str, torch.Tensor]:
     return {k: _as_tensor(v, device) for k, v in obs.items() if k not in ("raw", "norm")}
 
-
 class LowerA2CAgent:
+    # Shared-parameter lower controller over all intersections.
     def __init__(self, config, device: Optional[torch.device] = None):
         self.config = config
         self.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")

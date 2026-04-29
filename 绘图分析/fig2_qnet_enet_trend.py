@@ -1,10 +1,5 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-图2：Q_net / E_net 趋势图
-输入：episode_summary.csv
-输出：analysis_figures/fig2_qnet_enet_trend.png
-"""
 
 from __future__ import annotations
 import pandas as pd
@@ -13,12 +8,6 @@ import os
 from pathlib import Path
 
 def pct_change_text(early: float, late: float) -> str:
-    """
-    计算前后变化百分比。
-    注意：
-    - Q_net / E_net 一般是成本指标，数值下降代表改善；
-    - 这里只负责显示数学变化率，不判断好坏。
-    """
     if abs(early) <= 1e-8:
         return "N/A"
     return f"{(late - early) / abs(early) * 100.0:+.2f}%"
@@ -134,7 +123,6 @@ def main() -> None:
 
     print(f"[OK] run_dir = {run_dir}")
     print(f"[OK] saved: {out_path}")
-
 
 if __name__ == "__main__":
     main()

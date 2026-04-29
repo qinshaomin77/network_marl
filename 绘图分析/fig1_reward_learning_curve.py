@@ -1,10 +1,5 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-图1：Reward 学习曲线
-输入：episode_summary.csv
-输出：analysis_figures/fig1_reward_learning_curve.png
-"""
 
 from __future__ import annotations
 import os
@@ -108,7 +103,6 @@ def main() -> None:
 
     print(f"[OK] run_dir = {run_dir}")
     print(f"[OK] saved: {out_path}")
-
 
 if __name__ == "__main__":
     main()

@@ -1,25 +1,5 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-图4：5×5 路口权重热力图
-
-输入：
-    tls_step_metrics.csv
-
-输出：
-    analysis_figures/fig4_weight_heatmap_5x5_epXXX.png
-
-功能：
-1. 可以通过 --episodes 指定多个 episode：
-   python fig4_weight_heatmap_5x5.py --episodes 5,10,15,20
-
-2. 如果不指定 --episodes，则默认绘制 episode 为 5 的倍数：
-   ep=5,10,15,20,...
-
-3. 每个 episode 单独输出一张 5×5 双热力图：
-   左图：w_em
-   右图：w_eff
-"""
 
 from __future__ import annotations
 
@@ -31,16 +11,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
-
-# =============================================================================
-# 路径解析
-# =============================================================================
-
 def resolve_run_dir(run_dir: str | None) -> Path:
-    """
-    如果用户指定 --run-dir，则使用指定目录；
-    否则自动寻找 results/grid_5x5_* 中最新的结果目录。
-    """
     if run_dir:
         p = Path(run_dir)
         if not p.is_absolute():
@@ -63,22 +34,7 @@ def resolve_run_dir(run_dir: str | None) -> Path:
 
     return sorted(candidates, key=lambda x: x.name)[-1].resolve()
 
-
-# =============================================================================
-# episode 选择
-# =============================================================================
-
 def parse_episodes_arg(episodes_str: str | None) -> list[int] | None:
-    """
-    解析 --episodes 参数。
-
-    示例：
-        --episodes 5,10,15
-        --episodes 1,2,3,4,5
-
-    返回：
-        [5, 10, 15]
-    """
     if episodes_str is None or str(episodes_str).strip() == "":
         return None
 
@@ -91,20 +47,11 @@ def parse_episodes_arg(episodes_str: str | None) -> list[int] | None:
 
     return sorted(set(out))
 
-
 def select_target_episodes(
     all_episodes: list[int],
     episodes_arg: list[int] | None,
     default_multiple: int = 5,
 ) -> list[int]:
-    """
-    选择需要绘制的 episode。
-
-    规则：
-    1. 如果用户指定了 --episodes，则只绘制这些 episode；
-    2. 如果未指定，则默认绘制 5 的倍数；
-    3. 如果没有找到 5 的倍数，则退化为绘制最后一个 episode。
-    """
     all_set = set(all_episodes)
 
     if episodes_arg is not None:
@@ -122,7 +69,6 @@ def select_target_episodes(
 
         return valid
 
-    # 默认：只绘制 5 的倍数
     multiple = max(int(default_multiple), 1)
     target = [ep for ep in all_episodes if ep % multiple == 0]
 
@@ -135,18 +81,7 @@ def select_target_episodes(
 
     return target
 
-
-# =============================================================================
-# tls_id 网格位置解析
-# =============================================================================
-
 def extract_grid_pos(tls_id: str) -> tuple[int, int] | None:
-    """
-    支持以下形式：
-    - nt00, nt01, nt44
-    - tl_0_0, tls_0_0
-    - 任意以两个数字结尾的 id
-    """
     s = str(tls_id)
 
     m = re.search(r"nt(\d)(\d)$", s)
@@ -163,21 +98,10 @@ def extract_grid_pos(tls_id: str) -> tuple[int, int] | None:
 
     return None
 
-
-# =============================================================================
-# 构造 5×5 权重矩阵
-# =============================================================================
-
 def build_matrices(
     df_ep: pd.DataFrame,
     grid_size: int,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """
-    对单个 episode 内的数据按 tls_id 聚合，构造：
-    - mat_em:  5×5 w_em
-    - mat_eff: 5×5 w_eff
-    - labels:  5×5 tls_id 标签
-    """
     g = (
         df_ep.groupby("tls_id", as_index=False)
         .agg(
@@ -196,12 +120,10 @@ def build_matrices(
     parsed = {tid: extract_grid_pos(tid) for tid in tls_ids}
     valid_positions = [pos for pos in parsed.values() if pos is not None]
 
-    # 优先按 tls_id 中解析出的行列位置放置
     if len(valid_positions) >= max(1, len(tls_ids) // 2):
         rows = [r for r, _ in valid_positions]
         cols = [c for _, c in valid_positions]
 
-        # 兼容 1~5 编号，自动平移到 0~4
         row_offset = min(rows) if max(rows) - min(rows) + 1 <= grid_size else 0
         col_offset = min(cols) if max(cols) - min(cols) + 1 <= grid_size else 0
 
@@ -223,7 +145,6 @@ def build_matrices(
 
         return mat_em, mat_eff, labels
 
-    # 如果 tls_id 解析失败，则按 tls_id 排序后的顺序填入 5×5
     n = min(grid_size * grid_size, len(g))
     for idx in range(n):
         r = idx // grid_size
@@ -234,11 +155,6 @@ def build_matrices(
         labels[r, c] = str(g.loc[idx, "tls_id"])
 
     return mat_em, mat_eff, labels
-
-
-# =============================================================================
-# 绘图
-# =============================================================================
 
 def draw_heatmap(
     ax,
@@ -280,16 +196,12 @@ def draw_heatmap(
 
     return im
 
-
 def plot_one_episode(
     df: pd.DataFrame,
     episode: int,
     out_dir: Path,
     grid_size: int,
 ) -> Path:
-    """
-    绘制单个 episode 的 w_em / w_eff 双热力图。
-    """
     df_ep = df[df["episode"] == episode].copy()
 
     if df_ep.empty:
@@ -322,11 +234,6 @@ def plot_one_episode(
     plt.close()
 
     return out_path
-
-
-# =============================================================================
-# 主函数
-# =============================================================================
 
 def main() -> None:
     BASE_DIR = Path(r"E:\DRL_project\network_marl_batch_v5\results")
@@ -385,7 +292,6 @@ def main() -> None:
         print(f"[OK] saved: {out_path}")
 
     print(f"[DONE] 共输出 {len(saved_paths)} 张热力图。")
-
 
 if __name__ == "__main__":
     main()

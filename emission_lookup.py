@@ -1,20 +1,4 @@
 # -*- coding: utf-8 -*-
-"""
-envs/emission_lookup.py
-
-作用：
-1. 读取排放因子 CSV
-2. 清洗并建立快速查询索引
-3. 按 车型-速度-加速度-污染物 查询排放因子
-4. 提供单车单步排放量计算接口
-
-默认假设 CSV 至少包含以下字段：
-- vehicle_type
-- pollutant
-- speed_kmh
-- accel_ms2
-- EmissionFactor_gs
-"""
 
 from __future__ import annotations
 
@@ -24,15 +8,11 @@ from typing import Dict, Optional, Set, Tuple
 
 import pandas as pd
 
-
 LookupKey = Tuple[str, str, int, float]
-
 
 @dataclass
 class EmissionQueryInfo:
-    """
-    用于调试的查询结果信息
-    """
+    # Verbose query result for debugging normalization/fallback behavior.
     vehicle_type_raw: str
     vehicle_type_used: str
     pollutant_used: str
@@ -44,29 +24,8 @@ class EmissionQueryInfo:
     matched: bool
     fallback_used: bool
 
-
 class EmissionFactorLookup:
-    """
-    排放因子查询器
-
-    典型用法：
-        ef = EmissionFactorLookup(csv_path="data/emission_factor_table.csv")
-
-        factor = ef.get_factor(
-            vehicle_type="sedan",
-            speed_ms=12.3,
-            accel_ms2=0.8,
-            pollutant="NOx",
-        )
-
-        emission_g = ef.get_emission(
-            vehicle_type="sedan",
-            speed_ms=12.3,
-            accel_ms2=0.8,
-            sim_step=1.0,
-            pollutant="NOx",
-        )
-    """
+    # CSV-backed emission factor table with normalized lookup and cache.
 
     REQUIRED_COLUMNS = {
         "vehicle_type",
@@ -103,11 +62,8 @@ class EmissionFactorLookup:
 
         self._load()
 
-    # =========================================================
-    # 初始化
-    # =========================================================
-
     def _load(self) -> None:
+        # Load and normalize source CSV into an in-memory hash map.
         if not self.csv_path.exists():
             raise FileNotFoundError(f"Emission factor CSV not found: {self.csv_path}")
 
@@ -121,24 +77,20 @@ class EmissionFactorLookup:
 
         df = df.copy()
 
-        # 统一字段格式
         df["vehicle_type"] = df["vehicle_type"].astype(str).str.strip().str.lower()
         df["pollutant"] = df["pollutant"].astype(str).str.strip()
         df["speed_kmh"] = pd.to_numeric(df["speed_kmh"], errors="coerce")
         df["accel_ms2"] = pd.to_numeric(df["accel_ms2"], errors="coerce")
         df["EmissionFactor_gs"] = pd.to_numeric(df["EmissionFactor_gs"], errors="coerce")
 
-        # 清理空值
         df = df.dropna(
             subset=["vehicle_type", "pollutant", "speed_kmh", "accel_ms2", "EmissionFactor_gs"]
         ).reset_index(drop=True)
 
-        # 统一精度
         df["speed_kmh"] = df["speed_kmh"].round(0).astype(int)
         df["accel_ms2"] = df["accel_ms2"].round(1).astype(float)
         df["EmissionFactor_gs"] = df["EmissionFactor_gs"].astype(float)
 
-        # 去重：同一个 key 若重复，保留第一条
         df = df.drop_duplicates(
             subset=["vehicle_type", "pollutant", "speed_kmh", "accel_ms2"],
             keep="first",
@@ -172,11 +124,8 @@ class EmissionFactorLookup:
         if self.default_pollutant not in self.pollutants and self.pollutants:
             self.default_pollutant = sorted(self.pollutants)[0]
 
-    # =========================================================
-    # 基础工具
-    # =========================================================
-
     def _normalize_vehicle_type(self, vehicle_type: str | None) -> str:
+        # Normalize aliases to canonical vehicle type in table domain.
         if vehicle_type is None:
             return self.default_vehicle_type
 
@@ -184,7 +133,6 @@ class EmissionFactorLookup:
         if vt in self.vehicle_types:
             return vt
 
-        # 可按需要继续扩展映射
         alias_map = {
             "car": "sedan",
             "passenger": "sedan",
@@ -208,11 +156,9 @@ class EmissionFactorLookup:
 
         p = str(pollutant).strip()
 
-        # 优先精确匹配
         if p in self.pollutants:
             return p
 
-        # 再做大小写宽松匹配
         lower_map = {x.lower(): x for x in self.pollutants}
         if p.lower() in lower_map:
             return lower_map[p.lower()]
@@ -231,10 +177,6 @@ class EmissionFactorLookup:
         accel = max(self.min_accel_ms2, min(accel, self.max_accel_ms2))
         return float(accel)
 
-    # =========================================================
-    # 查询接口
-    # =========================================================
-
     def has_vehicle_type(self, vehicle_type: str) -> bool:
         return str(vehicle_type).strip().lower() in self.vehicle_types
 
@@ -250,9 +192,7 @@ class EmissionFactorLookup:
         accel_ms2: float,
         pollutant: Optional[str] = None,
     ) -> float:
-        """
-        查询排放因子，返回 g/s
-        """
+        # Return emission factor in g/s for normalized (type, pollutant, speed, accel).
         vt = self._normalize_vehicle_type(vehicle_type)
         pol = self._normalize_pollutant(pollutant)
         speed_kmh = self._normalize_speed_kmh(speed_ms)
@@ -264,7 +204,6 @@ class EmissionFactorLookup:
 
         factor = self.lookup.get((vt, pol, speed_kmh, accel))
         if factor is None:
-            # 兜底：再试默认车型
             factor = self.lookup.get(
                 (self.default_vehicle_type, pol, speed_kmh, accel),
                 0.0,
@@ -285,9 +224,7 @@ class EmissionFactorLookup:
         sim_step: float,
         pollutant: Optional[str] = None,
     ) -> float:
-        """
-        查询当前仿真步排放量，返回 g
-        """
+        # Convert factor (g/s) into per-step emission (g).
         factor_gs = self.get_factor(
             vehicle_type=vehicle_type,
             speed_ms=speed_ms,
@@ -303,9 +240,7 @@ class EmissionFactorLookup:
         accel_ms2: float,
         pollutant: Optional[str] = None,
     ) -> EmissionQueryInfo:
-        """
-        返回一次查询的详细标准化结果，便于调试
-        """
+        # Return normalized query details for diagnostics and validation.
         vehicle_type_raw = "" if vehicle_type is None else str(vehicle_type)
         vt = self._normalize_vehicle_type(vehicle_type)
         pol = self._normalize_pollutant(pollutant)
@@ -336,10 +271,6 @@ class EmissionFactorLookup:
             fallback_used=fallback_used,
         )
 
-    # =========================================================
-    # 摘要信息
-    # =========================================================
-
     def summary(self) -> Dict[str, object]:
         return {
             "csv_path": str(self.csv_path),
@@ -360,11 +291,6 @@ class EmissionFactorLookup:
         for k, v in info.items():
             print(f"{k}: {v}")
         print("=" * 70)
-
-
-# =========================================================
-# 便捷工厂函数
-# =========================================================
 
 def build_emission_lookup(
     csv_path: str | Path,

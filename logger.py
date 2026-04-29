@@ -1,7 +1,4 @@
 # -*- coding: utf-8 -*-
-"""logger.py
-Lightweight CSV logger for revised hierarchical edge-level upper model.
-"""
 
 from __future__ import annotations
 from pathlib import Path
@@ -10,13 +7,12 @@ import csv
 import json
 import numpy as np
 
-
+# CSV-based experiment logger with buffered writes.
 def _safe_float(x: Any, default: float = 0.0) -> float:
     try:
         return float(x)
     except Exception:
         return float(default)
-
 
 def _jsonable(x: Any) -> Any:
     if isinstance(x, np.ndarray):
@@ -37,8 +33,8 @@ def _jsonable(x: Any) -> Any:
         pass
     return x
 
-
 class _CsvBatchWriter:
+    # Buffered CSV writer to reduce frequent I/O flush overhead.
     def __init__(self, path: Path, fieldnames: List[str], flush_interval: int = 100):
         self.path = Path(path)
         self.fieldnames = list(fieldnames)
@@ -78,8 +74,8 @@ class _CsvBatchWriter:
         if self.file is not None:
             self.file.close()
 
-
 class TrafficLogger:
+    # Centralized logging for step-level, update-level and episode-level metrics.
     def __init__(self, config, env=None, output_dir: str | Path = "logs", flush_interval: int = 100, log_params: bool = True):
         self.config = config
         self.env = env
@@ -129,6 +125,9 @@ class TrafficLogger:
         self.episode_summary_writer = _CsvBatchWriter(self.output_dir / "episode_summary.csv", [
             "episode", "steps", "total_global_reward", "avg_global_reward", "avg_Q_net", "avg_E_net",
             "lower_updates", "upper_updates", "lower_actor_loss", "lower_critic_loss", "upper_actor_loss", "upper_critic_loss",
+            "episode_elapsed_sec", "total_elapsed_sec",
+            "prof_env_step_sec", "prof_lower_act_sec", "prof_upper_act_sec",
+            "prof_lower_update_sec", "prof_upper_update_sec", "prof_logging_sec",
         ], self.flush_interval)
         self.node_raw_writer = _CsvBatchWriter(self.output_dir / "tls_node_step_features_raw.csv", [
             "episode", "step", "simulation_time", "tls_id", "node_idx", "lane_id", "wave", "queue", "wait", "speed", "truck_ratio", "emission",
@@ -222,7 +221,19 @@ class TrafficLogger:
         st = self._adv_stats(batch)
         self.training_upper_writer.add_row({"episode": episode, "upper_update_idx": upper_update_idx, "total_upper_steps": total_upper_steps, "batch_size": len(batch.get("returns", [])), **{k: _safe_float(loss_dict.get(k, 0.0)) for k in ["policy_loss","value_loss","entropy_loss","total_loss","actor_loss","critic_loss","actor_grad_norm","critic_grad_norm"]}, **st})
 
-    def log_episode_summary(self, episode: int, env_stats: Dict[str, Any], lower_updates: int, upper_updates: int, last_lower_loss: Optional[Dict[str, Any]], last_upper_loss: Optional[Dict[str, Any]]):
+    def log_episode_summary(
+        self,
+        episode: int,
+        env_stats: Dict[str, Any],
+        lower_updates: int,
+        upper_updates: int,
+        last_lower_loss: Optional[Dict[str, Any]],
+        last_upper_loss: Optional[Dict[str, Any]],
+        episode_elapsed_sec: Optional[float] = None,
+        total_elapsed_sec: Optional[float] = None,
+        profile_stats: Optional[Dict[str, float]] = None,
+    ):
+        ps = profile_stats or {}
         self.episode_summary_writer.add_row({
             "episode": int(episode), **env_stats,
             "lower_updates": int(lower_updates), "upper_updates": int(upper_updates),
@@ -230,6 +241,14 @@ class TrafficLogger:
             "lower_critic_loss": _safe_float((last_lower_loss or {}).get("critic_loss", 0.0)),
             "upper_actor_loss": _safe_float((last_upper_loss or {}).get("actor_loss", 0.0)),
             "upper_critic_loss": _safe_float((last_upper_loss or {}).get("critic_loss", 0.0)),
+            "episode_elapsed_sec": _safe_float(episode_elapsed_sec, 0.0),
+            "total_elapsed_sec": _safe_float(total_elapsed_sec, 0.0),
+            "prof_env_step_sec": _safe_float(ps.get("env_step_sec", 0.0), 0.0),
+            "prof_lower_act_sec": _safe_float(ps.get("lower_act_sec", 0.0), 0.0),
+            "prof_upper_act_sec": _safe_float(ps.get("upper_act_sec", 0.0), 0.0),
+            "prof_lower_update_sec": _safe_float(ps.get("lower_update_sec", 0.0), 0.0),
+            "prof_upper_update_sec": _safe_float(ps.get("upper_update_sec", 0.0), 0.0),
+            "prof_logging_sec": _safe_float(ps.get("logging_sec", 0.0), 0.0),
         })
 
     def log_vehicle_trip_rows(self, episode: int):

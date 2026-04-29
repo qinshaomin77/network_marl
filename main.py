@@ -1,13 +1,12 @@
 # -*- coding: utf-8 -*-
-"""
-main.py
-"""
 
 from __future__ import annotations
 
 import random
 import argparse
 import traceback
+import time
+import json
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, Any, List, Optional
@@ -27,10 +26,35 @@ from logger import TrafficLogger
 from utils import build_sumo_cmd
 from model import HierarchicalTrafficModel
 
-
+# Training entry: orchestrates env interaction, hierarchical updates and logging.
 def log(msg: str, level: str = "INFO") -> None:
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print(f"[{ts}] [{level}] {msg}", flush=True)
+
+def format_elapsed(seconds: float) -> str:
+    total = max(0, int(round(float(seconds))))
+    h, rem = divmod(total, 3600)
+    m, s = divmod(rem, 60)
+    return f"{h:02d}:{m:02d}:{s:02d}"
+
+def write_runtime_summary(
+    path: Path,
+    total_elapsed_sec: float,
+    episode_elapsed_list: List[float],
+    completed_episodes: int,
+) -> None:
+    arr = np.asarray(episode_elapsed_list, dtype=np.float64)
+    payload = {
+        "completed_episodes": int(completed_episodes),
+        "total_elapsed_sec": float(total_elapsed_sec),
+        "total_elapsed_hms": format_elapsed(total_elapsed_sec),
+        "avg_episode_sec": float(arr.mean()) if arr.size else 0.0,
+        "max_episode_sec": float(arr.max()) if arr.size else 0.0,
+        "min_episode_sec": float(arr.min()) if arr.size else 0.0,
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
 
 def set_global_seed(seed: int) -> None:
     random.seed(seed)
@@ -40,35 +64,28 @@ def set_global_seed(seed: int) -> None:
         torch.cuda.manual_seed_all(seed)
     log(f"Global seed set to {seed}")
 
-
 def get_device() -> torch.device:
     return torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
 
 def ensure_dir(path: Path) -> Path:
     path.mkdir(parents=True, exist_ok=True)
     return path
 
-
 def generate_episode_seeds(global_seed: int, num_episodes: int) -> List[int]:
     rng = np.random.RandomState(global_seed)
     return rng.randint(0, 2**31 - 1, size=num_episodes).tolist()
 
-
 def save_checkpoint(ckpt_path: Path, model: HierarchicalTrafficModel, meta: Dict[str, Any]) -> None:
     ckpt_path.parent.mkdir(parents=True, exist_ok=True)
     torch.save({"model": model.get_state_dicts(), "meta": meta}, ckpt_path)
-
 
 def load_checkpoint(ckpt_path: Path, model: HierarchicalTrafficModel, map_location: Optional[torch.device] = None) -> Dict[str, Any]:
     payload = torch.load(ckpt_path, map_location=map_location or get_device())
     model.load_state_dicts(payload["model"])
     return payload.get("meta", {})
 
-
 def current_weight_dict_from_matrix(tls_ids: List[str], weight_matrix: np.ndarray) -> Dict[str, np.ndarray]:
     return {tl_id: np.asarray(weight_matrix[i], dtype=np.float32) for i, tl_id in enumerate(tls_ids)}
-
 
 def init_prev_policy_dict(tls_ids: List[str], a_max: int) -> Dict[str, np.ndarray]:
     base = np.full(a_max, 1.0 / max(a_max, 1), dtype=np.float32)
@@ -100,7 +117,6 @@ def build_neighbor_policy_pack(env: NetworkTrafficEnv, prev_policy_dict: Dict[st
         }
     return out
 
-
 def inject_neighbor_policy_into_obs(per_tls_obs: Dict[str, Dict[str, Any]], neighbor_policy_pack: Dict[str, Dict[str, np.ndarray]]) -> Dict[str, Dict[str, Any]]:
     for tl_id, obs in per_tls_obs.items():
         pack = neighbor_policy_pack.get(tl_id, None)
@@ -110,13 +126,7 @@ def inject_neighbor_policy_into_obs(per_tls_obs: Dict[str, Dict[str, Any]], neig
         obs["neighbor_policy_action_mask"] = pack["neighbor_policy_action_mask"]
     return per_tls_obs
 
-
 def compute_upper_reward(window_global_rewards, start_snapshot, end_snapshot, current_W, prev_W, config: TrafficConfig) -> float:
-    """Upper reward: edge-level normalized queue sum + emission sum + hotspot penalty.
-
-    The upper reward no longer mixes lower/global rewards. It evaluates the
-    network state at the end of the upper window.
-    """
     q_sum = float(end_snapshot.get("Q_sum", end_snapshot.get("Q_net", 0.0)))
     e_sum = float(end_snapshot.get("E_sum", end_snapshot.get("E_net", 0.0)))
     p_hot = float(end_snapshot.get("P_hot", end_snapshot.get("H_net", 0.0)))
@@ -140,7 +150,6 @@ def parse_args():
     parser.add_argument("--deterministic-lower", action="store_true")
     return parser.parse_args()
 
-
 def build_run_dirs(config: TrafficConfig) -> Dict[str, Path]:
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     run_dir = ensure_dir(config.OUTPUT_DIR / f"{config.NETWORK_NAME}_{timestamp}")
@@ -155,7 +164,6 @@ def build_run_dirs(config: TrafficConfig) -> Dict[str, Path]:
         "simulation_dir": simulation_dir,
         "tb_dir": tb_dir,
     }
-
 
 def build_components(config: TrafficConfig, run_dirs: Dict[str, Path], args):
     device = get_device()
@@ -200,7 +208,6 @@ def build_components(config: TrafficConfig, run_dirs: Dict[str, Path], args):
         "tb_writer": tb_writer,
     }
 
-
 def run_one_episode(
     episode: int,
     episode_seed: int,
@@ -215,9 +222,15 @@ def run_one_episode(
     total_upper_steps: int,
     lower_update_idx: int,
     upper_update_idx: int,
+    run_start_time: float,
+    episode_start_time: float,
     deterministic_upper: bool = False,
     deterministic_lower: bool = False,
 ) -> Dict[str, Any]:
+    # Episode-level rollout:
+    # 1) upper policy updates intersection weights every UPPER_K lower steps
+    # 2) lower policy acts each control step
+    # 3) buffers collect transitions and trigger updates when ready
     config.SUMO_SEED = int(episode_seed)
     env.sumo_cmd = build_sumo_cmd(config, gui=config.SUMO_GUI)
 
@@ -230,8 +243,6 @@ def run_one_episode(
 
     prev_policy_dict = init_prev_policy_dict(tls_ids, int(config.A_MAX))
     lower_buffer.clear()
-    # ← 改动 A：不再在 episode 开头清空 upper_buffer
-    #   upper_buffer 跨 episode 累积，只在 is_full 触发更新后才 clear
 
     done = False
     episode_step_count = 0
@@ -247,11 +258,22 @@ def run_one_episode(
 
     last_lower_loss: Optional[Dict[str, Any]] = None
     last_upper_loss: Optional[Dict[str, Any]] = None
+    profile_stats: Dict[str, float] = {
+        "env_step_sec": 0.0,
+        "lower_act_sec": 0.0,
+        "upper_act_sec": 0.0,
+        "lower_update_sec": 0.0,
+        "upper_update_sec": 0.0,
+        "logging_sec": 0.0,
+    }
 
     while not done:
+        # Upper decision is held for a K-step window.
         if episode_step_count % int(config.UPPER_K) == 0:
             upper_window_start_snapshot = env.get_upper_step_snapshot()
+            t0 = time.perf_counter()
             current_upper_out = model.act_upper(network_obs=network_obs, deterministic=deterministic_upper)
+            profile_stats["upper_act_sec"] += (time.perf_counter() - t0)
             current_upper_W_np = current_upper_out["W"].detach().cpu().numpy().astype(np.float32)
             env.set_upper_weights(current_upper_W_np)
             upper_window_global_rewards = []
@@ -262,6 +284,7 @@ def run_one_episode(
         pre_forward_critic_hidden = _detach_hidden(critic_hidden)
         tls_order = list(tls_ids)
 
+        t0 = time.perf_counter()
         lower_out = model.act_lower_all_batched(
             per_tls_obs=per_tls_obs,
             tls_ids=tls_ids,
@@ -270,6 +293,7 @@ def run_one_episode(
             upper_weight_matrix=current_upper_W_np,
             deterministic=deterministic_lower,
         )
+        profile_stats["lower_act_sec"] += (time.perf_counter() - t0)
 
         action_dict = lower_out["action_dict"]
         log_prob_dict = lower_out["log_prob_dict"]
@@ -279,7 +303,9 @@ def run_one_episode(
         critic_hidden = lower_out["critic_hidden"]
         prev_policy_dict = lower_out["policy_dict"]
 
+        t0 = time.perf_counter()
         next_obs, reward_dict, terminated, truncated, info = env.step(action_dict)
+        profile_stats["env_step_sec"] += (time.perf_counter() - t0)
         done = bool(terminated or truncated)
 
         next_per_tls_obs = next_obs["per_tls_obs"]
@@ -300,9 +326,11 @@ def run_one_episode(
             tls_order=tls_order,
         )
 
+        t0 = time.perf_counter()
         logger.log_network_step(episode)
         logger.log_tls_step(episode, reward_dict=reward_dict, action_dict=action_dict)
         logger.log_node_features(episode, step=int(env.current_step))
+        profile_stats["logging_sec"] += (time.perf_counter() - t0)
 
         if lower_buffer.is_full or done:
             if done:
@@ -320,11 +348,13 @@ def run_one_episode(
 
             episode_lower_update_count += 1
             
-            # ← 新增：跳过 episode 第一次 update（hidden 冷启动）
             if episode_lower_update_count > 1:
+                t0 = time.perf_counter()
                 last_lower_loss = model.update_lower_batched(lower_batch)
+                profile_stats["lower_update_sec"] += (time.perf_counter() - t0)
                 lower_update_idx += 1
                 
+                t0 = time.perf_counter()
                 logger.log_lower_training(
                     episode=episode,
                     lower_update_idx=lower_update_idx,
@@ -332,6 +362,7 @@ def run_one_episode(
                     batch=lower_batch,
                     loss_dict=last_lower_loss,
                 )
+                profile_stats["logging_sec"] += (time.perf_counter() - t0)
             
             lower_buffer.clear()
 
@@ -366,6 +397,7 @@ def run_one_episode(
                 upper_metrics=end_snapshot,
             )
 
+            t0 = time.perf_counter()
             logger.log_upper_step(
                 episode=episode,
                 upper_step=episode_upper_step_count + 1,
@@ -376,6 +408,7 @@ def run_one_episode(
                 start_step=int((upper_window_start_snapshot or {}).get("step", max(0, env.current_step - int(config.UPPER_K)))),
                 end_step=int(end_snapshot.get("step", env.current_step)),
             )
+            profile_stats["logging_sec"] += (time.perf_counter() - t0)
 
             total_upper_steps += 1
             episode_upper_step_count += 1
@@ -383,9 +416,7 @@ def run_one_episode(
             if total_upper_steps % 20 == 0:
                 log(f"  upper_steps={total_upper_steps}, ep={episode}") 
 
-            # ← 改动 B：只在 buffer 满时触发上层更新，episode 结束不再强制触发
             if upper_buffer.is_full:
-                # 显式判断最后一个样本的 done 状态决定 bootstrap value
                 if len(upper_buffer.dones) > 0 and upper_buffer.dones[-1]:
                     last_upper_value = 0.0
                 else:
@@ -394,9 +425,12 @@ def run_one_episode(
                 upper_buffer.compute_returns(last_value=last_upper_value)
                 upper_batch = upper_buffer.get()
 
+                t0 = time.perf_counter()
                 last_upper_loss = model.update_upper(upper_batch)
+                profile_stats["upper_update_sec"] += (time.perf_counter() - t0)
                 upper_update_idx += 1
 
+                t0 = time.perf_counter()
                 logger.log_upper_training(
                     episode=episode,
                     upper_update_idx=upper_update_idx,
@@ -404,6 +438,7 @@ def run_one_episode(
                     batch=upper_batch,
                     loss_dict=last_upper_loss,
                 )
+                profile_stats["logging_sec"] += (time.perf_counter() - t0)
                 upper_buffer.clear()
 
         per_tls_obs = next_per_tls_obs
@@ -417,6 +452,9 @@ def run_one_episode(
             tb_writer.add_scalar("env/Q_net_step", float(info.get("upper_metrics", {}).get("Q_net", 0.0)), total_env_steps)
 
     env_stats = env.get_episode_statistics()
+    now_time = time.perf_counter()
+    episode_elapsed_sec = float(now_time - episode_start_time)
+    total_elapsed_sec = float(now_time - run_start_time)
 
     logger.log_episode_summary(
         episode=episode,
@@ -425,6 +463,9 @@ def run_one_episode(
         upper_updates=upper_update_idx,
         last_lower_loss=last_lower_loss,
         last_upper_loss=last_upper_loss,
+        episode_elapsed_sec=episode_elapsed_sec,
+        total_elapsed_sec=total_elapsed_sec,
+        profile_stats=profile_stats,
     )
     logger.log_vehicle_trip_rows(episode=episode)
     logger.log_episode_summary_raw(episode=episode)
@@ -443,11 +484,17 @@ def run_one_episode(
         "upper_update_idx": upper_update_idx,
         "last_lower_loss": last_lower_loss,
         "last_upper_loss": last_upper_loss,
+        "episode_elapsed_sec": episode_elapsed_sec,
+        "total_elapsed_sec": total_elapsed_sec,
+        "profile_stats": profile_stats,
     }
 
-
 def train(args):
+    # Global training loop across episodes.
     set_global_seed(args.seed)
+    run_start_time = time.perf_counter()
+    episode_elapsed_list: List[float] = []
+    completed_episodes = 0
 
     config = TrafficConfig()
     config.SUMO_GUI = bool(args.gui)
@@ -487,6 +534,7 @@ def train(args):
 
     try:
         for episode in range(1, config.NUM_EPISODES + 1):
+            episode_start_time = time.perf_counter()
             log(f">>> Episode {episode}/{config.NUM_EPISODES} 开始...")
             ep_summary = run_one_episode(
                 episode=episode,
@@ -502,6 +550,8 @@ def train(args):
                 total_upper_steps=total_upper_steps,
                 lower_update_idx=lower_update_idx,
                 upper_update_idx=upper_update_idx,
+                run_start_time=run_start_time,
+                episode_start_time=episode_start_time,
                 deterministic_upper=bool(args.deterministic_upper),
                 deterministic_lower=bool(args.deterministic_lower),
             )
@@ -511,6 +561,21 @@ def train(args):
             total_upper_steps = int(ep_summary["total_upper_steps"])
             lower_update_idx = int(ep_summary["lower_update_idx"])
             upper_update_idx = int(ep_summary["upper_update_idx"])
+            episode_elapsed_sec = float(ep_summary.get("episode_elapsed_sec", 0.0))
+            total_elapsed_sec = float(ep_summary.get("total_elapsed_sec", time.perf_counter() - run_start_time))
+            ps = ep_summary.get("profile_stats", {})
+            episode_elapsed_list.append(episode_elapsed_sec)
+            completed_episodes += 1
+            log(f"Episode {episode} time={episode_elapsed_sec:.2f}s ({format_elapsed(episode_elapsed_sec)}), total={total_elapsed_sec:.2f}s ({format_elapsed(total_elapsed_sec)})")
+            log(
+                "Profile "
+                f"env_step={float(ps.get('env_step_sec', 0.0)):.2f}s, "
+                f"lower_act={float(ps.get('lower_act_sec', 0.0)):.2f}s, "
+                f"upper_act={float(ps.get('upper_act_sec', 0.0)):.2f}s, "
+                f"lower_update={float(ps.get('lower_update_sec', 0.0)):.2f}s, "
+                f"upper_update={float(ps.get('upper_update_sec', 0.0)):.2f}s, "
+                f"logging={float(ps.get('logging_sec', 0.0)):.2f}s"
+            )
 
             avg_reward = float(env_stats.get("avg_global_reward", float("-inf")))
 
@@ -530,14 +595,29 @@ def train(args):
                 )
 
         log("Training finished.")
+        total_elapsed_sec = float(time.perf_counter() - run_start_time)
+        log(f"Total runtime: {total_elapsed_sec:.2f}s ({format_elapsed(total_elapsed_sec)})")
 
     except KeyboardInterrupt:
         log("Training interrupted by user.", level="WARN")
+        total_elapsed_sec = float(time.perf_counter() - run_start_time)
+        log(f"Runtime until interrupt: {total_elapsed_sec:.2f}s ({format_elapsed(total_elapsed_sec)})", level="WARN")
     except Exception as e:
         log(f"Training crashed: {e}", level="ERROR")
         traceback.print_exc()
         raise
     finally:
+        try:
+            total_elapsed_sec = float(time.perf_counter() - run_start_time)
+            write_runtime_summary(
+                path=run_dirs["log_dir"] / "runtime_summary.json",
+                total_elapsed_sec=total_elapsed_sec,
+                episode_elapsed_list=episode_elapsed_list,
+                completed_episodes=completed_episodes,
+            )
+            log(f"Runtime summary written: {run_dirs['log_dir'] / 'runtime_summary.json'}")
+        except Exception as e:
+            log(f"Failed to write runtime summary: {e}", level="WARN")
         try:
             env.close()
         except Exception:
@@ -548,7 +628,6 @@ def train(args):
             pass
         if tb_writer is not None:
             tb_writer.close()
-
 
 if __name__ == "__main__":
     args = parse_args()

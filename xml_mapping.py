@@ -1,7 +1,4 @@
 # -*- coding: utf-8 -*-
-"""
-xml_mapping.py
-"""
 
 import csv
 import re
@@ -12,24 +9,18 @@ import xml.etree.ElementTree as ET
 
 import numpy as np
 
-
-# =============================================================================
-# 数据结构
-# =============================================================================
-
+# Static mapping objects parsed from SUMO XML files.
 @dataclass
 class ConnectionInfo:
-    """单条受控连接信息（以 controlled connection 为节点）"""
     link_index: int
     incoming_lane: str
     outgoing_lane: str
     movement: str           # right / straight / left / unknown
     detector_id: str
 
-
 @dataclass
 class MappingBundle:
-    """单个交叉口的静态映射数据包"""
+    # Per-traffic-light static mapping used by env and lower model.
 
     net_file: Path
     add_file: Path
@@ -38,31 +29,25 @@ class MappingBundle:
     traffic_light_id: str = ""
     junction_id: str = ""
 
-    # 连接信息
     connections: List[ConnectionInfo] = field(default_factory=list)
 
-    # 节点顺序（connection-level nodes）
     ordered_incoming_lanes: List[str] = field(default_factory=list)
     ordered_detector_ids: List[str] = field(default_factory=list)
     ordered_link_indices: List[int] = field(default_factory=list)
 
-    # 映射字典
     lane_to_detector: Dict[str, str] = field(default_factory=dict)
     detector_to_lane: Dict[str, str] = field(default_factory=dict)
     lane_to_link_index: Dict[str, int] = field(default_factory=dict)
     link_index_to_lane: Dict[int, str] = field(default_factory=dict)
 
-    # 相位信息
     rl_phases: List[str] = field(default_factory=list)
     action_to_phase: Dict[int, int] = field(default_factory=dict)
     num_actions: int = 0
     all_phases: List[str] = field(default_factory=list)
     phase_durations: List[int] = field(default_factory=list)
 
-    # 右转
     right_turn_indices: Set[int] = field(default_factory=set)
 
-    # GraphEncoder 静态图信息
     movement_list: List[str] = field(default_factory=list)
     movement_onehot: Optional[np.ndarray] = None
     right_turn_mask: Optional[np.ndarray] = None
@@ -75,12 +60,9 @@ class MappingBundle:
 
     warnings: List[str] = field(default_factory=list)
 
-
 @dataclass
 class NetworkGraph:
-    """
-    供上层 / network_embedding.py 使用的交叉口级静态图
-    """
+    # TLS-level neighbor graph for network-wide coordination context.
     tls_ids: List[str]
     tls_neighbors: Dict[str, Dict[str, str]]
     adj_matrix: np.ndarray
@@ -88,12 +70,9 @@ class NetworkGraph:
     idx_to_id: Dict[int, str]
     node_embeddings: Optional[np.ndarray] = None
 
-
-
-
 @dataclass
 class EdgeGraphBundle:
-    """Static edge-level graph for upper layer."""
+    # Edge-level directed graph and edge->tls aggregation matrix for upper model.
     edge_ids: List[str]
     edge_id_to_idx: Dict[str, int]
     idx_to_edge_id: Dict[int, str]
@@ -107,9 +86,7 @@ class EdgeGraphBundle:
 
 @dataclass
 class NetworkMappingBundle:
-    """
-    路网级静态映射总包
-    """
+    # Top-level mapping package returned by load_network_mapping().
     net_file: Path
     add_file: Path
     mapping_dict: Dict[str, MappingBundle] = field(default_factory=dict)
@@ -117,16 +94,10 @@ class NetworkMappingBundle:
     edge_graph: Optional[EdgeGraphBundle] = None
     warnings: List[str] = field(default_factory=list)
 
-
-# =============================================================================
-# 基础工具函数
-# =============================================================================
-
 def _read_xml_root(xml_path: Path) -> ET.Element:
     if not xml_path.exists():
         raise FileNotFoundError(f"XML file not found: {xml_path}")
     return ET.parse(xml_path).getroot()
-
 
 def _movement_from_dir(dir_code: str) -> str:
     code = (dir_code or "").lower().strip()
@@ -138,11 +109,7 @@ def _movement_from_dir(dir_code: str) -> str:
     }
     return mapping.get(code, code or "unknown")
 
-
 def _movement_onehot(movement: str) -> np.ndarray:
-    """
-    movement -> onehot [right, straight, left]
-    """
     vec = np.zeros(3, dtype=np.float32)
     if movement == "right":
         vec[0] = 1.0
@@ -152,29 +119,20 @@ def _movement_onehot(movement: str) -> np.ndarray:
         vec[2] = 1.0
     return vec
 
-
 def _safe_float(x: Optional[str], default: float = 0.0) -> float:
     try:
         return float(x)
     except Exception:
         return default
 
-
-# =============================================================================
-# 单路口静态解析
-# =============================================================================
-
 def _find_all_traffic_lights(net_root: ET.Element) -> List[str]:
-    """返回 net.xml 中全部 tlLogic id"""
     tl_ids = [tl.get("id") for tl in net_root.findall("tlLogic") if tl.get("id")]
     tl_ids = sorted(set(tl_ids))
     if not tl_ids:
         raise ValueError("No traffic light (tlLogic) found in net.xml")
     return tl_ids
 
-
 def _find_junction(net_root: ET.Element, tl_id: str) -> ET.Element:
-    """查找 traffic_light junction"""
     junctions = net_root.findall("junction[@type='traffic_light']")
     if not junctions:
         raise ValueError("No traffic_light junction found in net.xml")
@@ -185,15 +143,11 @@ def _find_junction(net_root: ET.Element, tl_id: str) -> ET.Element:
 
     raise ValueError(f"Cannot find traffic_light junction for tl_id='{tl_id}'")
 
-
 def _parse_controlled_connections(
     net_root: ET.Element,
     tl_id: str,
     warnings: List[str],
 ) -> List[Dict[str, Any]]:
-    """
-    解析受该 tl 控制的 controlled connections，按 linkIndex 排序
-    """
     connections: List[Dict[str, Any]] = []
 
     for conn in net_root.findall("connection"):
@@ -229,7 +183,6 @@ def _parse_controlled_connections(
 
     connections.sort(key=lambda x: x["link_index"])
 
-    # linkIndex 连续性检查
     link_indices = [c["link_index"] for c in connections]
     expected = list(range(len(link_indices)))
     if link_indices != expected:
@@ -240,14 +193,7 @@ def _parse_controlled_connections(
 
     return connections
 
-
 def _parse_detectors(add_root: ET.Element) -> Tuple[Dict[str, str], Dict[str, str]]:
-    """
-    解析 laneAreaDetector
-    返回：
-        lane_to_detector
-        detector_to_lane
-    """
     lane_to_detector: Dict[str, str] = {}
     detector_to_lane: Dict[str, str] = {}
 
@@ -259,7 +205,6 @@ def _parse_detectors(add_root: ET.Element) -> Tuple[Dict[str, str], Dict[str, st
 
         detector_to_lane[det_id] = lane_id
 
-        # 同一 lane 多 detector 时，优先使用 lane 同名 detector
         if lane_id not in lane_to_detector:
             lane_to_detector[lane_id] = det_id
         elif det_id == lane_id:
@@ -267,21 +212,12 @@ def _parse_detectors(add_root: ET.Element) -> Tuple[Dict[str, str], Dict[str, st
 
     return lane_to_detector, detector_to_lane
 
-
 def _parse_traffic_light_phases(
     net_root: ET.Element,
     tl_id: str,
     connections: List[Dict[str, Any]],
     warnings: List[str],
 ) -> Tuple[List[str], List[int], List[str], Dict[int, int], Set[int]]:
-    """
-    解析 tlLogic:
-    - all_phases
-    - phase_durations
-    - rl_phases（排除纯黄灯，且必须存在非右转绿灯）
-    - action_to_phase
-    - right_turn_indices
-    """
     right_turn_indices: Set[int] = set()
     for conn in connections:
         if conn["movement"] == "right":
@@ -341,7 +277,6 @@ def _parse_traffic_light_phases(
 
     return all_phases, phase_durations, rl_phases, action_to_phase, right_turn_indices
 
-
 def _build_phase_green_masks(
     rl_phases: List[str],
     num_nodes: int,
@@ -356,7 +291,6 @@ def _build_phase_green_masks(
         for i in range(limit):
             mask[i] = 1.0 if phase_state[i].lower() == "g" else 0.0
 
-        # 右转节点：始终视作绿灯
         for i in right_turn_indices:
             if 0 <= i < num_nodes:
                 mask[i] = 1.0
@@ -365,16 +299,12 @@ def _build_phase_green_masks(
 
     return phase_green_masks
 
-
 def _build_graph_structure(
     connections: List[Dict[str, Any]],
     rl_phases: List[str],
     right_turn_indices: Set[int],
     warnings: List[str],
 ) -> Dict[str, Any]:
-    """
-    构建单路口局部静态图结构
-    """
     num_nodes = len(connections)
 
     movement_list = [conn["movement"] for conn in connections]
@@ -389,20 +319,15 @@ def _build_graph_structure(
 
     self_mask = np.eye(num_nodes, dtype=np.float32)
 
-    # 注意：这里调用新版 _build_phase_green_masks
     phase_green_masks = _build_phase_green_masks(
         rl_phases=rl_phases,
         num_nodes=num_nodes,
         right_turn_indices=right_turn_indices,
     )
 
-    # ---------------------------------------------------------
-    # same-group
-    # ---------------------------------------------------------
     same_group_mask = np.zeros((num_nodes, num_nodes), dtype=np.float32)
     same_group_edges_set: Set[Tuple[int, int]] = set()
 
-    # 1) 按每个 phase 的绿灯组构造同组边
     for green_mask in phase_green_masks.values():
         green_indices = np.where(green_mask > 0.5)[0].tolist()
 
@@ -415,8 +340,6 @@ def _build_graph_structure(
                 same_group_mask[a, b] = 1.0
                 same_group_mask[b, a] = 1.0
 
-    # 2) 显式保证：右转节点与所有其他有效节点都属于 same-group
-    #    更严格贴合“right-turn lane can be regarded as the same group as any other node”
     for i in right_turn_indices:
         if not (0 <= i < num_nodes):
             continue
@@ -430,13 +353,9 @@ def _build_graph_structure(
 
     same_group_edges = sorted(list(same_group_edges_set))
 
-    # ---------------------------------------------------------
-    # diff-group
-    # ---------------------------------------------------------
     diff_group_mask = np.zeros((num_nodes, num_nodes), dtype=np.float32)
     diff_group_edges: List[Tuple[int, int]] = []
 
-    # 只在非右转节点之间构造 diff-group
     non_right_indices = [i for i in range(num_nodes) if i not in right_turn_indices]
 
     for p in range(len(non_right_indices)):
@@ -444,7 +363,6 @@ def _build_graph_structure(
             i = non_right_indices[p]
             j = non_right_indices[q]
 
-            # 已经属于 same-group 的，不再进 diff-group
             if same_group_mask[i, j] > 0.5:
                 continue
 
@@ -470,7 +388,6 @@ def _build_graph_structure(
         "diff_group_mask": diff_group_mask,
         "phase_green_masks": phase_green_masks,
     }
-
 
 def _build_bundle(
     net_file: Path,
@@ -540,7 +457,6 @@ def _build_bundle(
 
     return bundle
 
-
 def _build_single_mapping_for_tl(
     net_file: Path,
     add_file: Path,
@@ -588,11 +504,6 @@ def _build_single_mapping_for_tl(
         warnings=warnings,
     )
 
-
-# =============================================================================
-# CSV 导出（可选）
-# =============================================================================
-
 def _write_csv(bundle: MappingBundle) -> None:
     if bundle.output_csv is None:
         return
@@ -622,19 +533,7 @@ def _write_csv(bundle: MappingBundle) -> None:
         writer.writeheader()
         writer.writerows(rows)
 
-
-# =============================================================================
-# 路网邻接构建
-# =============================================================================
-
 def _split_grid_like_id(tls_id: str) -> Optional[Tuple[int, int]]:
-    """
-    从类似 00 / nt11 / tls_0304 解析 (row, col)
-    规则：
-    - 取末尾连续数字串
-    - 长度为偶数且 >= 2
-    - 前半 row，后半 col
-    """
     m = re.search(r"(\d+)$", tls_id)
     if not m:
         return None
@@ -651,14 +550,9 @@ def _split_grid_like_id(tls_id: str) -> Optional[Tuple[int, int]]:
     except Exception:
         return None
 
-
 def _build_tls_neighbors_from_grid_ids(
     tls_ids: List[str],
 ) -> Optional[Dict[str, Dict[str, str]]]:
-    """
-    若所有 tls_id 都能解析成 (row, col)，则按规则网格构建邻接
-    返回 None 表示不能用该方法
-    """
     parsed: Dict[str, Tuple[int, int]] = {}
     for tid in tls_ids:
         rc = _split_grid_like_id(tid)
@@ -683,7 +577,6 @@ def _build_tls_neighbors_from_grid_ids(
 
     return neighbors
 
-
 def _get_tl_junction_positions(
     net_root: ET.Element,
     tls_ids: List[str],
@@ -701,16 +594,11 @@ def _get_tl_junction_positions(
 
     return pos
 
-
 def _build_tls_neighbors_from_coordinates(
     net_root: ET.Element,
     tls_ids: List[str],
     tol: float = 1e-6,
 ) -> Dict[str, Dict[str, str]]:
-    """
-    从 junction 几何坐标构建北/东/南/西邻居
-    作为非规则命名时的 fallback
-    """
     pos = _get_tl_junction_positions(net_root, tls_ids)
     neighbors: Dict[str, Dict[str, str]] = {tid: {} for tid in tls_ids}
 
@@ -736,7 +624,6 @@ def _build_tls_neighbors_from_coordinates(
 
             x1, y1 = pos[other]
 
-            # 同列：north / south
             if abs(x1 - x0) <= tol:
                 dy = y1 - y0
                 if dy > tol and dy < north_dist:
@@ -746,7 +633,6 @@ def _build_tls_neighbors_from_coordinates(
                     south_dist = -dy
                     south_candidate = other
 
-            # 同行：east / west
             if abs(y1 - y0) <= tol:
                 dx = x1 - x0
                 if dx > tol and dx < east_dist:
@@ -767,20 +653,15 @@ def _build_tls_neighbors_from_coordinates(
 
     return neighbors
 
-
 def _build_tls_neighbors(
     net_root: ET.Element,
     tls_ids: List[str],
 ) -> Dict[str, Dict[str, str]]:
-    """
-    优先按规则网格命名构建邻接，失败后按坐标 fallback
-    """
     by_grid = _build_tls_neighbors_from_grid_ids(tls_ids)
     if by_grid is not None:
         return by_grid
 
     return _build_tls_neighbors_from_coordinates(net_root, tls_ids)
-
 
 def _build_tls_adjacency(
     tls_ids: List[str],
@@ -804,7 +685,6 @@ def _build_tls_adjacency(
 
     return adj, id_to_idx, idx_to_id
 
-
 def _build_network_graph(
     net_root: ET.Element,
     tls_ids: List[str],
@@ -821,11 +701,6 @@ def _build_network_graph(
         node_embeddings=None,
     )
 
-
-# =============================================================================
-# 批量构建与主接口
-# =============================================================================
-
 def _build_all_intersection_mappings(
     net_file: Path,
     add_file: Path,
@@ -834,9 +709,6 @@ def _build_all_intersection_mappings(
     output_dir: Optional[Path] = None,
     generate_csv: bool = False,
 ) -> Dict[str, MappingBundle]:
-    """
-    为整个 net.xml 中所有 traffic lights 批量构建 MappingBundle
-    """
     all_tl_ids = _find_all_traffic_lights(net_root)
 
     csv_dir = None
@@ -867,16 +739,8 @@ def _build_all_intersection_mappings(
 
     return mapping_dict
 
-
-
 def _build_edge_graph(net_root: ET.Element, tls_ids: List[str], config: Any = None) -> EdgeGraphBundle:
-    """Build static edge graph for upper-level edge GAT.
-
-    Direction definitions:
-        A_edge_down[i, j] = 1 if edge j is downstream of edge i.
-        A_edge_up[i, j]   = 1 if edge j is upstream of edge i.
-    edge_to_tls maps an incoming edge to the traffic light it directly enters.
-    """
+    # Build directed edge adjacency and edge-to-tls mapping from net.xml connections.
     edge_ids: List[str] = []
     edge_lanes: Dict[str, List[str]] = {}
     edge_capacity: Dict[str, float] = {}
@@ -954,18 +818,7 @@ def load_network_mapping(
     print_summary: bool = False,
     generate_csv: bool = False,
 ) -> NetworkMappingBundle:
-    """
-    路网版唯一主入口
-
-    输入：
-        config.NET_FILE
-        config.ADDITIONAL_FILE
-
-    输出：
-        NetworkMappingBundle:
-            - mapping_dict[tl_id] = MappingBundle
-            - network_graph
-    """
+    # Main entry: parse XML and return all static structures required by env.
     net_file = Path(config.NET_FILE).expanduser().resolve()
     add_file = Path(config.ADDITIONAL_FILE).expanduser().resolve()
 
@@ -1012,14 +865,10 @@ def load_network_mapping(
 
     return bundle
 
-
 if __name__ == "__main__":
     from types import SimpleNamespace
     from pathlib import Path
 
-    # =========================
-    # 按你的实际文件路径修改
-    # =========================
     cfg = SimpleNamespace(
         NET_FILE=r"E:\DRL_project\network_marl\network_grid\grid_5x5.net.xml",
         ADDITIONAL_FILE=r"E:\DRL_project\network_marl\network_grid\grid_5x5.add.xml",
@@ -1030,7 +879,6 @@ if __name__ == "__main__":
     print("=" * 90)
 
     try:
-        # 输出目录（可选）
         debug_output_dir = Path(r"E:\DRL_project\network_marl\network_grid\network_mapping_debug")
 
         network_bundle = load_network_mapping(

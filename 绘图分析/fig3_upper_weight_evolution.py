@@ -1,18 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-图3：上层权重演化图
-输入：upper_step_metrics.csv
-输出：analysis_figures/fig3_upper_weight_evolution.png
-"""
 
 from __future__ import annotations
 from pathlib import Path
 import os
 import pandas as pd
 import matplotlib.pyplot as plt
-
-
 
 def main() -> None:
     window = 10
@@ -78,7 +71,6 @@ def main() -> None:
 
     fig, axes = plt.subplots(3, 1, figsize=(10, 10), sharex=True)
 
-    # 1) 权重均值与标准差
     axes[0].plot(
         ep["episode"],
         ep["w_em_mean"],
@@ -114,7 +106,6 @@ def main() -> None:
     axes[0].grid(True, alpha=0.3)
     axes[0].legend(ncol=2)
 
-    # 2) 上层 reward
     axes[1].plot(
         ep["episode"],
         ep["upper_reward"],
@@ -133,7 +124,6 @@ def main() -> None:
     axes[1].grid(True, alpha=0.3)
     axes[1].legend()
 
-    # 3) 上层 entropy
     axes[2].plot(
         ep["episode"],
         ep["upper_entropy"],
@@ -172,7 +162,6 @@ def main() -> None:
 
     print(f"[OK] run_dir = {run_dir}")
     print(f"[OK] saved: {out_path}")
-
 
 if __name__ == "__main__":
     main()

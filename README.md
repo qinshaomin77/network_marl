@@ -179,3 +179,67 @@ python main.py --seed 42 --episodes 80 --tensorboard
 | `training_metrics_upper.csv` | 每次更新 | 上层 PPO 训练指标 |
 | `episode_summary.csv` | 每回合 | 回合级汇总统计 |
 | `tls_node_step_features_raw.csv` | 每步/每车道 | 原始车道级特征（wave、queue、speed 等） |
+
+
+---
+
+## README 脚本内容（仓库检查结果）
+
+以下根据当前仓库根目录脚本与数据文件整理，可直接作为“脚本说明”部分使用。
+
+### 训练与主流程脚本
+
+| 脚本 | 作用 | 常用命令 |
+|------|------|----------|
+| `main.py` | 训练主入口：初始化环境、模型、日志、checkpoint、上下层更新循环 | `python main.py --seed 42 --episodes 80 --tensorboard` |
+| `model.py` | 分层模型总封装，统一调度上下层 Agent 的推理/更新 | （被 `main.py` 导入） |
+| `env.py` | SUMO 环境封装：观测构建、执行动作、奖励与终止逻辑 | （被 `main.py` 导入） |
+| `config.py` | 全局配置与超参数默认值 | `python main.py --episodes <N>` 覆盖部分参数 |
+
+### 模型与算法模块
+
+| 脚本 | 作用 |
+|------|------|
+| `node_model.py` | 下层 A2C：局部路口策略与价值评估 |
+| `network_model.py` | 上层 PPO：全网权重协调策略 |
+| `model_layers.py` | GAT/LSTM/MLP 等共享网络层 |
+| `buffer.py` | A2C 与 PPO 训练数据缓存 |
+
+### 工具与数据处理脚本
+
+| 脚本 | 作用 | 备注 |
+|------|------|------|
+| `bulid_network_grid.py` | 生成 5×5 路网与 SUMO 配置文件 | 首次运行建议先执行 |
+| `xml_mapping.py` | 解析 SUMO XML，构建拓扑映射 | 环境初始化依赖 |
+| `utils.py` | SUMO 命令组装、路口状态采集等工具函数 | 训练过程中调用 |
+| `logger.py` | 训练过程结构化日志落盘 | 输出到 `results/*/logs/` |
+| `emission_lookup.py` | 按车型+速度+加速度查询排放因子 | 依赖 `emission_data/*.csv` |
+
+### 分析与绘图脚本（`绘图分析/`）
+
+| 脚本 | 图表内容 |
+|------|----------|
+| `fig1_reward_learning_curve.py` | 奖励学习曲线 |
+| `fig2_qnet_enet_trend.py` | 全网排队/排放趋势 |
+| `fig3_upper_weight_evolution.py` | 上层权重演化 |
+| `fig4_weight_heatmap_5x5.py` | 5×5 权重热力图 |
+| `fig5_loss_grad_stability.py` | 损失与梯度稳定性 |
+
+### 推荐执行顺序（最小可复现）
+
+```bash
+# 1) 生成 SUMO 路网与路由
+python bulid_network_grid.py
+
+# 2) 启动训练
+python main.py --seed 42 --episodes 80 --tensorboard
+
+# 3) 启动 TensorBoard 查看训练曲线（可选）
+tensorboard --logdir results
+```
+
+### 关键目录说明
+
+- `network_grid/`：路网、连接、信号、仿真配置等 SUMO 文件。
+- `emission_data/`：排放因子查表数据。
+- `results/`（运行后生成）：模型、日志、仿真输出。

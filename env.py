@@ -1,7 +1,5 @@
 # -*- coding: utf-8 -*-
-"""env.py
-NetworkTrafficEnv with revised lower neighbor policy input and edge-level upper observation.
-"""
+"""Environment wrapper."""
 
 from __future__ import annotations
 import sys
@@ -20,6 +18,7 @@ from emission_lookup import EmissionFactorLookup
 
 @dataclass
 class StaticNetwork:
+    # Static topology/mapping used across the whole run.
     mapping_dict: Dict[str, Any]
     network_graph: Any
     edge_graph: Any
@@ -81,6 +80,20 @@ class NetworkTrafficEnv(gym.Env):
             for tl_id in self.static.tls_ids
         }
         self._vehicle_type_cache: Dict[str, str] = {}
+        self._all_lanes = set()
+        self._all_detectors = set()
+        self._lane_to_edge: Dict[str, str] = {}
+        self._lane_sub_cache: Dict[str, Dict[str, Any]] = {}
+        self._det_sub_cache: Dict[str, Dict[str, Any]] = {}
+        self._vehicle_step_cache: Dict[str, Dict[str, Any]] = {}
+
+        self._edge_id_to_idx = {
+            edge_id: i for i, edge_id in enumerate(self.static.edge_ids)
+        }
+        self.edge_emission_accumulator_raw = np.zeros(
+            len(self.static.edge_ids),
+            dtype=np.float32,
+        )
         self.upper_weights = np.full((len(self.static.tls_ids), 2), 0.5, dtype=np.float32)
         self.last_upper_metrics = {"E_net": 0.0, "Q_net": 0.0, "H_net": 0.0, "B_net": 0.0, "E_sum": 0.0, "Q_sum": 0.0, "P_hot": 0.0}
         self.last_edge_metrics: Dict[str, Dict[str, float]] = {}
@@ -97,6 +110,7 @@ class NetworkTrafficEnv(gym.Env):
         self._build_spaces()
 
     def _validate_network_consistency(self):
+        # Align config runtime fields with parsed network metadata.
         if not self.static.tls_ids:
             raise ValueError("No traffic lights found in network mapping.")
         action_nums = [self.static.mapping_dict[tid].num_actions for tid in self.static.tls_ids]
@@ -140,27 +154,166 @@ class NetworkTrafficEnv(gym.Env):
     def _subscribe_all(self):
         all_lanes = set()
         all_detectors = set()
+        lane_to_edge: Dict[str, str] = {}
+
         for node in self.nodes.values():
             all_lanes.update(node.lanes_in)
             all_detectors.update(node.detectors)
-        for lanes in self.static.edge_lanes.values():
-            all_lanes.update(lanes)
-        for lane_id in all_lanes:
+
+        for edge_id, lanes in self.static.edge_lanes.items():
+            for lane_id in lanes:
+                all_lanes.add(lane_id)
+                lane_to_edge[lane_id] = edge_id
+
+        self._all_lanes = set(all_lanes)
+        self._all_detectors = set(all_detectors)
+        self._lane_to_edge = dict(lane_to_edge)
+
+        for lane_id in sorted(self._all_lanes):
             try:
-                traci.lane.subscribe(lane_id, [
-                    traci.constants.LAST_STEP_VEHICLE_NUMBER,
-                    traci.constants.LAST_STEP_VEHICLE_HALTING_NUMBER,
-                    traci.constants.LAST_STEP_MEAN_SPEED,
-                    traci.constants.LAST_STEP_VEHICLE_ID_LIST,
-                    traci.constants.LAST_STEP_LENGTH,
-                ])
+                traci.lane.subscribe(
+                    lane_id,
+                    [
+                        traci.constants.LAST_STEP_VEHICLE_NUMBER,
+                        traci.constants.LAST_STEP_VEHICLE_HALTING_NUMBER,
+                        traci.constants.LAST_STEP_MEAN_SPEED,
+                        traci.constants.LAST_STEP_VEHICLE_ID_LIST,
+                        traci.constants.LAST_STEP_LENGTH,
+                    ],
+                )
             except Exception:
                 pass
-        for det_id in all_detectors:
+
+        for det_id in sorted(self._all_detectors):
             try:
-                traci.lanearea.subscribe(det_id, [traci.constants.LAST_STEP_VEHICLE_NUMBER, traci.constants.LAST_STEP_VEHICLE_ID_LIST])
+                traci.lanearea.subscribe(
+                    det_id,
+                    [
+                        traci.constants.LAST_STEP_VEHICLE_NUMBER,
+                        traci.constants.LAST_STEP_VEHICLE_ID_LIST,
+                    ],
+                )
             except Exception:
                 pass
+
+    def _refresh_subscription_cache(self):
+        self._lane_sub_cache = {}
+        self._det_sub_cache = {}
+
+        for lane_id in self._all_lanes:
+            try:
+                self._lane_sub_cache[lane_id] = traci.lane.getSubscriptionResults(lane_id) or {}
+            except Exception:
+                self._lane_sub_cache[lane_id] = {}
+
+        for det_id in self._all_detectors:
+            try:
+                self._det_sub_cache[det_id] = traci.lanearea.getSubscriptionResults(det_id) or {}
+            except Exception:
+                self._det_sub_cache[det_id] = {}
+
+    @staticmethod
+    def _safe_sub_get(sub: Optional[Dict[str, Any]], key, default=0):
+        if not sub:
+            return default
+        try:
+            return sub.get(key, default)
+        except Exception:
+            return default
+
+    @staticmethod
+    def _is_truck_type(vtype: str) -> bool:
+        s = str(vtype).strip().lower()
+        return s == "truck" or "truck" in s or s in {"hdv", "lorry"}
+
+    def _get_vehicle_type_cached(self, vid: str) -> str:
+        vt = self._vehicle_type_cache.get(vid)
+        if vt is not None:
+            return vt
+        try:
+            vt = traci.vehicle.getTypeID(vid)
+        except Exception:
+            vt = str(getattr(self.config, "DEFAULT_VEHICLE_TYPE", "sedan"))
+        self._vehicle_type_cache[vid] = vt
+        return vt
+
+    def _build_vehicle_step_cache(self):
+        # Per-simulation-step vehicle cache reused by node- and edge-level metrics.
+        cache: Dict[str, Dict[str, Any]] = {}
+
+        for lane_id, sub in self._lane_sub_cache.items():
+            veh_ids = self._safe_sub_get(
+                sub,
+                traci.constants.LAST_STEP_VEHICLE_ID_LIST,
+                (),
+            ) or ()
+
+            edge_id = self._lane_to_edge.get(lane_id, "")
+
+            for vid in veh_ids:
+                if vid in cache:
+                    continue
+
+                vtype = self._get_vehicle_type_cached(vid)
+
+                try:
+                    speed_ms = float(traci.vehicle.getSpeed(vid))
+                except Exception:
+                    speed_ms = 0.0
+
+                try:
+                    accel_ms2 = float(traci.vehicle.getAcceleration(vid))
+                except Exception:
+                    accel_ms2 = 0.0
+
+                try:
+                    emission_g = self.shared_emission_lookup.get_emission(
+                        vehicle_type=vtype,
+                        speed_ms=speed_ms,
+                        accel_ms2=accel_ms2,
+                        sim_step=self.config.SIM_STEP,
+                        pollutant=self.config.EMISSION_POLLUTANT,
+                    )
+                    emission_mg = float(emission_g) * 1000.0
+                except Exception:
+                    emission_mg = 0.0
+
+                cache[vid] = {
+                    "vtype": vtype,
+                    "is_truck": self._is_truck_type(vtype),
+                    "speed_ms": speed_ms,
+                    "accel_ms2": accel_ms2,
+                    "emission_mg": emission_mg,
+                    "lane_id": lane_id,
+                    "edge_id": edge_id,
+                }
+
+        self._vehicle_step_cache = cache
+
+    def _reset_control_step_accumulators(self):
+        for node in self.nodes.values():
+            node.reset_step_emission()
+
+        self.edge_emission_accumulator_raw = np.zeros(
+            len(self.static.edge_ids),
+            dtype=np.float32,
+        )
+
+    def _accumulate_emissions_from_vehicle_cache(self):
+
+        for node in self.nodes.values():
+            node.accumulate_step_emission(
+                det_sub_cache=self._det_sub_cache,
+                vehicle_step_cache=self._vehicle_step_cache,
+            )
+
+        for item in self._vehicle_step_cache.values():
+            edge_id = str(item.get("edge_id", ""))
+            idx = self._edge_id_to_idx.get(edge_id, None)
+            if idx is not None:
+                self.edge_emission_accumulator_raw[idx] += float(
+                    item.get("emission_mg", 0.0)
+                )
 
     def _start_sumo(self):
         try:
@@ -194,7 +347,6 @@ class NetworkTrafficEnv(gym.Env):
     def get_upper_weights_dict(self) -> Dict[str, np.ndarray]:
         return {tl_id: self.upper_weights[i].copy() for i, tl_id in enumerate(self.static.tls_ids)}
 
-    # ---------------- lower obs ----------------
     def _build_node_features(self, lower_state_dict: Dict[str, Dict[str, np.ndarray]]) -> np.ndarray:
         norm = lower_state_dict["norm"]
         raw = lower_state_dict["raw"]
@@ -222,18 +374,33 @@ class NetworkTrafficEnv(gym.Env):
     def _init_neighbor_policy_placeholders(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         a_max = int(self.config.A_MAX)
         return np.zeros(4, dtype=np.float32), np.zeros((4, a_max), dtype=np.float32), np.zeros((4, a_max), dtype=np.float32)
-
+    
     def _build_per_tls_obs(self) -> Dict[str, Dict[str, Any]]:
+        # Lower-level observation for each intersection (tls).
         per_tls_obs: Dict[str, Dict[str, Any]] = {}
-        all_lower_states = {tl_id: self.nodes[tl_id].get_lower_state_dict() for tl_id in self.static.tls_ids}
+        all_lower_states = {
+            tl_id: self.nodes[tl_id].get_lower_state_dict(
+                lane_sub_cache=self._lane_sub_cache,
+                det_sub_cache=self._det_sub_cache,
+                vehicle_step_cache=self._vehicle_step_cache,
+            )
+            for tl_id in self.static.tls_ids
+        }
+
         for tl_id in self.static.tls_ids:
             lower_state = all_lower_states[tl_id]
-            neighbor_dir_mask, neighbor_policy_dir, neighbor_policy_action_mask = self._init_neighbor_policy_placeholders()
+
+            neighbor_dir_mask, neighbor_policy_dir, neighbor_policy_action_mask = (
+                self._init_neighbor_policy_placeholders()
+            )
+
             for idx, d in enumerate(self.config.NEIGHBOR_DIRECTIONS):
                 nbr_id = self.static.tls_neighbors.get(tl_id, {}).get(d, None)
                 if nbr_id is not None:
                     neighbor_dir_mask[idx] = 1.0
+
             A_same, A_diff = self._get_graph_static_inputs_for_tls(tl_id)
+
             per_tls_obs[tl_id] = {
                 "node_features": self._build_node_features(lower_state),
                 "A_same": A_same,
@@ -246,9 +413,9 @@ class NetworkTrafficEnv(gym.Env):
                 "raw": lower_state["raw"],
                 "norm": lower_state["norm"],
             }
-        return per_tls_obs
 
-    # ---------------- upper edge obs / metrics ----------------
+        return per_tls_obs
+    
     def _is_truck_type(self, vtype: str) -> bool:
         return "truck" in str(vtype).lower() or str(vtype).lower() in {"hdv", "lorry"}
 
@@ -262,54 +429,79 @@ class NetworkTrafficEnv(gym.Env):
             vt = str(getattr(self.config, "DEFAULT_VEHICLE_TYPE", "sedan"))
         self._vehicle_type_cache[vid] = vt
         return vt
-
+    
     def _collect_edge_metrics(self) -> Dict[str, Dict[str, float]]:
         metrics: Dict[str, Dict[str, float]] = {}
         eps = 1e-6
-        for edge_id in self.static.edge_ids:
+
+        for edge_idx, edge_id in enumerate(self.static.edge_ids):
             veh_ids = []
             vehcount = 0.0
             halt = 0.0
-            emission_mg = 0.0
-            for lane_id in self.static.edge_lanes.get(edge_id, []):
-                try:
-                    sub = traci.lane.getSubscriptionResults(lane_id) or {}
-                    vehcount += float(sub.get(traci.constants.LAST_STEP_VEHICLE_NUMBER, traci.lane.getLastStepVehicleNumber(lane_id)))
-                    halt += float(sub.get(traci.constants.LAST_STEP_VEHICLE_HALTING_NUMBER, traci.lane.getLastStepHaltingNumber(lane_id)))
-                    lane_vids = list(sub.get(traci.constants.LAST_STEP_VEHICLE_ID_LIST, traci.lane.getLastStepVehicleIDs(lane_id)))
-                    veh_ids.extend(lane_vids)
-                except Exception:
-                    continue
             truck_count = 0.0
-            for vid in veh_ids:
-                vt = self._get_vehicle_type_cached(vid)
-                if self._is_truck_type(vt):
-                    truck_count += 1.0
-                try:
-                    emission_g = self.shared_emission_lookup.get_emission(
-                        vehicle_type=vt,
-                        speed_ms=traci.vehicle.getSpeed(vid),
-                        accel_ms2=traci.vehicle.getAcceleration(vid),
-                        sim_step=self.config.SIM_STEP,
-                        pollutant=self.config.EMISSION_POLLUTANT,
+
+            for lane_id in self.static.edge_lanes.get(edge_id, []):
+                sub = self._lane_sub_cache.get(lane_id, {}) or {}
+
+                vehcount += float(
+                    self._safe_sub_get(
+                        sub,
+                        traci.constants.LAST_STEP_VEHICLE_NUMBER,
+                        0.0,
                     )
-                    emission_mg += float(emission_g) * 1000.0
-                except Exception:
-                    pass
+                )
+                halt += float(
+                    self._safe_sub_get(
+                        sub,
+                        traci.constants.LAST_STEP_VEHICLE_HALTING_NUMBER,
+                        0.0,
+                    )
+                )
+
+                lane_vids = list(
+                    self._safe_sub_get(
+                        sub,
+                        traci.constants.LAST_STEP_VEHICLE_ID_LIST,
+                        (),
+                    ) or ()
+                )
+                veh_ids.extend(lane_vids)
+
+            for vid in veh_ids:
+                item = self._vehicle_step_cache.get(vid)
+                if item is not None:
+                    if bool(item.get("is_truck", False)):
+                        truck_count += 1.0
+                else:
+                    if self._is_truck_type(self._get_vehicle_type_cached(vid)):
+                        truck_count += 1.0
+
+            emission_mg = (
+                float(self.edge_emission_accumulator_raw[edge_idx])
+                if edge_idx < len(self.edge_emission_accumulator_raw)
+                else 0.0
+            )
+
             cap = float(self.static.edge_capacity.get(edge_id, max(vehcount, 1.0)))
             cap = max(cap, 1.0)
+
             lane_num = len(self.static.edge_lanes.get(edge_id, []))
             lane_num = max(float(lane_num), 1.0)
+
             vehcount_norm = np.clip(vehcount / max(cap, eps), 0.0, 2.0)
-            truck_ratio = truck_count / max(len(veh_ids), 1.0)
+            truck_ratio = truck_count / max(float(len(veh_ids)), 1.0)
             queue_norm = np.clip(halt / max(cap, eps), 0.0, 2.0)
+
             emission_ref = float(getattr(self.config, "EMISSION_MAX", 150.0)) * lane_num
             emission_ref = max(emission_ref, eps)
             emission_norm = np.clip(emission_mg / emission_ref, 0.0, 2.0)
+
             q_thr = float(getattr(self.config, "UPPER_QUEUE_THR_NORM", 0.7))
             e_thr = float(getattr(self.config, "UPPER_EMISSION_THR_NORM", 0.7))
+
             q_hot = max(0.0, (queue_norm - q_thr) / max(q_thr, eps))
             e_hot = max(0.0, (emission_norm - e_thr) / max(e_thr, eps))
+
             metrics[edge_id] = {
                 "vehcount_raw": float(vehcount),
                 "vehcount_norm": float(vehcount_norm),
@@ -324,6 +516,7 @@ class NetworkTrafficEnv(gym.Env):
                 "emission_hotspot": float(e_hot),
                 "edge_capacity": float(cap),
             }
+
         self.last_edge_metrics = metrics
         return metrics
 
@@ -354,6 +547,7 @@ class NetworkTrafficEnv(gym.Env):
         }
 
     def _build_network_obs(self) -> Dict[str, Any]:
+        # Upper-level observation at edge granularity.
         edge_metrics = self._collect_edge_metrics()
         X_edge, edge_weight = self._build_edge_features(edge_metrics)
         self._update_upper_metrics_from_edges(edge_metrics)
@@ -368,7 +562,6 @@ class NetworkTrafficEnv(gym.Env):
     def _build_obs(self) -> Dict[str, Any]:
         return {"per_tls_obs": self._build_per_tls_obs(), "network_obs": self._build_network_obs()}
 
-    # ---------------- simulation helpers ----------------
     @staticmethod
     def _make_yellow_state(prev_state: str) -> str:
         return "".join("y" if ch in ("g", "G", "y", "Y") else "r" for ch in prev_state)
@@ -379,13 +572,20 @@ class NetworkTrafficEnv(gym.Env):
     def _run_simulation_seconds(self, seconds: float):
         if seconds <= 0:
             return
+
         num_steps = int(round(seconds / self.sim_step))
+
         for _ in range(num_steps):
             try:
                 traci.simulationStep()
                 self.simulation_time += self.sim_step
-                for node in self.nodes.values():
-                    node.accumulate_step_emission()
+
+                self._refresh_subscription_cache()
+
+                self._build_vehicle_step_cache()
+
+                self._accumulate_emissions_from_vehicle_cache()
+
             except traci.exceptions.FatalTraCIError:
                 break
 
@@ -419,7 +619,6 @@ class NetworkTrafficEnv(gym.Env):
         for tl_id, a in action_dict.items():
             self.nodes[tl_id].prev_action = int(a)
 
-    # ---------------- env api ----------------
     def reset(self, *, seed: Optional[int] = None, options: Optional[dict] = None):
         super().reset(seed=seed)
         self._close_if_loaded()
@@ -430,20 +629,37 @@ class NetworkTrafficEnv(gym.Env):
         self.last_action_dict = {}
         self.last_local_stats = {}
         self.last_edge_metrics = {}
+        self.last_upper_metrics = {
+            "E_net": 0.0,
+            "Q_net": 0.0,
+            "H_net": 0.0,
+            "B_net": 0.0,
+            "E_sum": 0.0,
+            "Q_sum": 0.0,
+            "P_hot": 0.0,
+        }
         self.episode_global_rewards = []
         self.episode_Q_net = []
         self.episode_E_net = []
+        self._lane_sub_cache = {}
+        self._det_sub_cache = {}
+        self._vehicle_step_cache = {}
+        self.edge_emission_accumulator_raw = np.zeros(
+            len(self.static.edge_ids),
+            dtype=np.float32,
+        )
         if seed is not None:
             self.config.SUMO_SEED = int(seed)
             self.sumo_cmd = build_sumo_cmd(self.config, gui=self.is_gui)
         self._start_sumo()
         self._subscribe_all()
+        self._refresh_subscription_cache()
         for node in self.nodes.values():
             node.prev_action = 0
             node.reset_step_emission()
             node.cache_speed_limits()
         return self._build_obs(), {}
-
+    
     def _collect_node_statistics(self) -> Dict[str, Dict[str, float]]:
         return {tl_id: self.nodes[tl_id].get_statistics() for tl_id in self.static.tls_ids}
 
@@ -480,14 +696,17 @@ class NetworkTrafficEnv(gym.Env):
             "edge_metrics": self.last_edge_metrics,
             "upper_weights": self.get_upper_weights_dict(),
         }
-
+    
     def step(self, action_dict: Dict[str, int]):
+        # One control step: apply actions -> run SUMO -> collect obs/reward/metrics.
         for tl_id in self.static.tls_ids:
             if tl_id not in action_dict:
                 raise KeyError(f"Missing action for tls_id={tl_id}")
-        for node in self.nodes.values():
-            node.reset_step_emission()
+
+        self._reset_control_step_accumulators()
+
         self._change_phase(action_dict)
+
         for node in self.nodes.values():
             node.finalize_step_emission()
         self.current_step += 1
@@ -502,9 +721,11 @@ class NetworkTrafficEnv(gym.Env):
         self.episode_global_rewards.append(global_reward)
         self.episode_Q_net.append(float(self.last_upper_metrics.get("Q_net", 0.0)))
         self.episode_E_net.append(float(self.last_upper_metrics.get("E_net", 0.0)))
-        return obs, reward_dict, terminated, truncated, self._build_info(reward_dict, global_reward)
-
-    # ---------------- snapshots / logger helpers ----------------
+        return obs, reward_dict, terminated, truncated, self._build_info(
+            reward_dict,
+            global_reward,
+        )
+    
     def get_upper_step_snapshot(self) -> Dict[str, Any]:
         return {**self.last_upper_metrics, "step": int(self.current_step)}
 
@@ -559,25 +780,40 @@ class NetworkTrafficEnv(gym.Env):
                 "w_eff": float(self.upper_weights[i, 1]),
             })
         return rows
-
+    
     def get_tls_node_feature_rows(self, mode: str = "raw") -> List[Dict[str, Any]]:
         rows = []
         key = "raw" if mode == "raw" else "norm"
-        per_tls_obs = self._build_per_tls_obs()
+
         for tl_id in self.static.tls_ids:
-            state = per_tls_obs[tl_id][key]
+            node = self.nodes[tl_id]
+
+            if node.last_state_dict is None:
+                state = node.get_lower_state_dict(
+                    lane_sub_cache=self._lane_sub_cache,
+                    det_sub_cache=self._det_sub_cache,
+                    vehicle_step_cache=self._vehicle_step_cache,
+                )[key]
+            else:
+                state = node.last_state_dict[key]
+
             lanes = self.static.mapping_dict[tl_id].ordered_incoming_lanes
+
             for idx, lane_id in enumerate(lanes):
                 rows.append({
-                    "step": int(self.current_step), "simulation_time": float(self.simulation_time), "tls_id": tl_id,
-                    "node_idx": int(idx), "lane_id": lane_id,
-                    "wave": float(np.asarray(state["wave"])[idx]),
+                    "step": int(self.current_step),
+                    "simulation_time": float(self.simulation_time),
+                    "tls_id": tl_id,
+                    "node_idx": int(idx),
+                    "lane_id": lane_id,
+                    "wave": float(np.asarray(state.get("wave", np.zeros(len(lanes), dtype=np.float32)))[idx]),
                     "queue": float(np.asarray(state.get("queue", np.zeros(len(lanes), dtype=np.float32)))[idx]),
                     "wait": float(np.asarray(state.get("wait", np.zeros(len(lanes), dtype=np.float32)))[idx]),
-                    "speed": float(np.asarray(state["speed"])[idx]),
-                    "truck_ratio": float(np.asarray(state["truck_ratio"])[idx]),
+                    "speed": float(np.asarray(state.get("speed", np.zeros(len(lanes), dtype=np.float32)))[idx]),
+                    "truck_ratio": float(np.asarray(state.get("truck_ratio", np.zeros(len(lanes), dtype=np.float32)))[idx]),
                     "emission": float(np.asarray(state.get("emission", np.zeros(len(lanes), dtype=np.float32)))[idx]),
                 })
+
         return rows
 
     def get_vehicle_trip_rows(self) -> List[Dict[str, Any]]:
@@ -595,3 +831,4 @@ class NetworkTrafficEnv(gym.Env):
             "avg_Q_net": float(np.mean(self.episode_Q_net)) if self.episode_Q_net else 0.0,
             "avg_E_net": float(np.mean(self.episode_E_net)) if self.episode_E_net else 0.0,
         }
+

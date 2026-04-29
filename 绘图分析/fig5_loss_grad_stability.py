@@ -1,14 +1,5 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-图5：上下层 Loss / Grad 稳定性分析
-输入：
-- training_metrics_lower.csv
-- training_metrics_upper.csv
-
-输出：
-- analysis_figures/fig5_loss_grad_stability.png
-"""
 
 from __future__ import annotations
 import os
@@ -22,7 +13,6 @@ def smooth(series: pd.Series, window: int) -> pd.Series:
         return series
     return series.rolling(window=window, min_periods=1, center=True).mean()
 
-
 def prepare_training_df(df: pd.DataFrame, required: set[str], name: str) -> pd.DataFrame:
     missing = required - set(df.columns)
     if missing:
@@ -33,7 +23,6 @@ def prepare_training_df(df: pd.DataFrame, required: set[str], name: str) -> pd.D
 
     df = df.dropna(subset=list(required)).copy()
     return df
-
 
 def main() -> None:
     window = 10
@@ -82,7 +71,6 @@ def main() -> None:
 
     fig, axes = plt.subplots(2, 2, figsize=(13, 8))
 
-    # 下层 loss
     axes[0, 0].plot(
         lower["lower_update_idx"],
         lower["policy_loss"],
@@ -108,7 +96,6 @@ def main() -> None:
     axes[0, 0].grid(True, alpha=0.3)
     axes[0, 0].legend()
 
-    # 上层 loss
     axes[0, 1].plot(
         upper["upper_update_idx"],
         upper["policy_loss"],
@@ -134,7 +121,6 @@ def main() -> None:
     axes[0, 1].grid(True, alpha=0.3)
     axes[0, 1].legend()
 
-    # 下层梯度
     axes[1, 0].plot(
         lower["lower_update_idx"],
         smooth(lower["actor_grad_norm"], window),
@@ -153,7 +139,6 @@ def main() -> None:
     axes[1, 0].grid(True, alpha=0.3)
     axes[1, 0].legend()
 
-    # 上层梯度
     axes[1, 1].plot(
         upper["upper_update_idx"],
         smooth(upper["actor_grad_norm"], window),
@@ -178,7 +163,6 @@ def main() -> None:
 
     print(f"[OK] run_dir = {run_dir}")
     print(f"[OK] saved: {out_path}")
-
 
 if __name__ == "__main__":
     main()

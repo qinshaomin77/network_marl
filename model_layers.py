@@ -1,9 +1,4 @@
 # -*- coding: utf-8 -*-
-"""model_layers.py
-Shared neural-network layers used by lower and upper models.
-The same class can be reused, but lower and upper instantiate separate modules,
-so their parameters are not shared.
-"""
 
 from __future__ import annotations
 from typing import Optional, Any
@@ -11,7 +6,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-
+# Common NN layer utilities shared by lower and upper models.
 def orthogonal_init(module: nn.Module, gain: float = 1.0) -> nn.Module:
     if isinstance(module, nn.Linear):
         nn.init.orthogonal_(module.weight, gain=gain)
@@ -19,14 +14,13 @@ def orthogonal_init(module: nn.Module, gain: float = 1.0) -> nn.Module:
             nn.init.constant_(module.bias, 0.0)
     return module
 
-
 def _as_tensor(x: Any, device: torch.device, dtype=torch.float32) -> torch.Tensor:
     if isinstance(x, torch.Tensor):
         return x.to(device=device, dtype=dtype)
     return torch.tensor(x, dtype=dtype, device=device)
 
-
 class MLPBlock(nn.Module):
+    # Lightweight configurable MLP block.
     def __init__(self, in_dim: int, hidden_dim: int, out_dim: int, n_layers: int = 2, activation=nn.ReLU):
         super().__init__()
         layers = []
@@ -40,17 +34,8 @@ class MLPBlock(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.net(x)
 
-
 class RelationGATLayer(nn.Module):
-    """Additive multi-head GAT with relation-specific adjacency mask.
-
-    Input:
-        H: [B,N,D]
-        adj_mask: [B,N,N] or [N,N]
-        node_mask: [B,N] optional
-    Output:
-        [B,N,out_dim]
-    """
+    # Multi-head additive GAT constrained by a relation-specific adjacency mask.
 
     def __init__(self, in_dim: int, out_dim: int, num_heads: int = 4, dropout_p: float = 0.1, negative_slope: float = 0.05):
         super().__init__()
@@ -101,9 +86,8 @@ class RelationGATLayer(nn.Module):
         out = self.out_dropout(out)
         return out * valid_nodes.unsqueeze(-1).to(out.dtype)
 
-
 class LSTMCore(nn.Module):
-    """One-step LSTMCell wrapper."""
+    # One-step LSTMCell wrapper used for recurrent actor/critic heads.
 
     def __init__(self, input_dim: int, hidden_dim: int):
         super().__init__()

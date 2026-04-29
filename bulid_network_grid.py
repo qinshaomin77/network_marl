@@ -5,7 +5,6 @@ import os
 import random
 import subprocess
 
-
 class GridNetworkGenerator:
     def __init__(self):
         self.grid_size = 5
@@ -26,27 +25,13 @@ class GridNetworkGenerator:
 
         self.output_dir = "./network_grid"
 
-        # =========================================================
-        # 固定配时 / 信号参数
-        # =========================================================
-        # 绿灯与黄灯时长
         self.green_main = 30
         self.yellow = 2
 
-        # offset 模式:
-        #   "sync"      : 全同步（全部 offset=0）
-        #   "diagonal"  : 按对角线错峰，推荐
-        #   "row"       : 按行错峰
-        #   "col"       : 按列错峰
         self.offset_mode = "diagonal"
 
-        # 错峰步长，默认 10 s
-        # 若你想和 DELTA_T=5 更强对齐，也可以改成 15
         self.offset_step = 10
 
-    # =========================================================
-    # 基础工具
-    # =========================================================
     def write(self, filename, content):
         os.makedirs(self.output_dir, exist_ok=True)
         path = os.path.join(self.output_dir, filename)
@@ -86,14 +71,7 @@ class GridNetworkGenerator:
             "west": self.np("w", r) if c == 0 else self.nt(r, c - 1),
         }
 
-    # =========================================================
-    # 信号控制辅助函数
-    # =========================================================
     def build_signal_phases(self):
-        """
-        当前仍保留原有 4 个主绿相位 + 4 个黄灯相位结构：
-            SN直行 -> SN左转 -> EW直行 -> EW左转
-        """
         return [
             (str(self.green_main), "gGrgrrgGrgrr", "sn_straight"),
             (str(self.yellow),     "gyrgrrgyrgrr", "sn_straight_yellow"),
@@ -109,15 +87,11 @@ class GridNetworkGenerator:
         return sum(int(dur) for dur, _, _ in phases)
 
     def get_tl_offset(self, r, c, cycle_length):
-        """
-        生成 fixed-time offset
-        """
         mode = str(self.offset_mode).lower().strip()
 
         if mode == "sync":
             raw_offset = 0
         elif mode == "diagonal":
-            # 推荐：按对角线错峰
             raw_offset = self.offset_step * (r + c)
         elif mode == "row":
             raw_offset = self.offset_step * r
@@ -143,9 +117,6 @@ class GridNetworkGenerator:
             print(f"row {r}: {' '.join(row_vals)}")
         print("=================================\n")
 
-    # =========================================================
-    # 网络生成
-    # =========================================================
     def generate_nodes(self):
         lines = ['<?xml version="1.0" encoding="UTF-8"?>', '', '<nodes>']
         for r in range(self.grid_size):
@@ -367,9 +338,6 @@ class GridNetworkGenerator:
 '''
         self.write("grid_5x5.sumocfg", content)
 
-    # =========================================================
-    # 路由 / 流量生成
-    # =========================================================
     def boundary_pairs(self, direction):
         pairs = []
         if direction == "north":
@@ -564,10 +532,8 @@ class GridNetworkGenerator:
         self.generate_sumocfg()
         self.run_netconvert()
 
-
 def main():
     GridNetworkGenerator().generate_all()
-
 
 if __name__ == "__main__":
     main()

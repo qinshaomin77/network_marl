@@ -1,7 +1,4 @@
 # -*- coding: utf-8 -*-
-"""
-utils.py
-"""
 
 from __future__ import annotations
 
@@ -12,11 +9,7 @@ import traci
 
 from emission_lookup import EmissionFactorLookup
 
-
-# =============================================================================
-# SUMO 命令构建
-# =============================================================================
-
+# Build SUMO command line from config and run-specific output path.
 def build_sumo_cmd(config, gui: Optional[bool] = None):
     if gui is None:
         gui = config.SUMO_GUI
@@ -37,8 +30,6 @@ def build_sumo_cmd(config, gui: Optional[bool] = None):
         "--additional-files", str(config.ADDITIONAL_FILE),
         "--summary-output", str(summary_path),
         "--tripinfo-output", str(tripinfo_path),
-        # "--vehroute-output", str(vehroute_path),
-        # "--fcd-output", str(fcd_path),
         "--no-step-log", "true",
         "--no-warnings", "true",
         "--waiting-time-memory", "1000",
@@ -47,15 +38,8 @@ def build_sumo_cmd(config, gui: Optional[bool] = None):
     ]
     return cmd
 
-
-# =============================================================================
-# 单路口动态测量器
-# =============================================================================
-
 class Node:
-    """
-    单个交叉口的动态状态采集器
-    """
+    # Per-intersection state extractor used by the lower controller.
 
     def __init__(self, name: str, config: Any, lane_mapping, emission_lookup=None):
         self.name = name
@@ -118,10 +102,6 @@ class Node:
         self._validate_order()
         self._init_zero_states()
 
-    # -------------------------------------------------------------------------
-    # 初始化与工具
-    # -------------------------------------------------------------------------
-
     def _validate_order(self):
         link_indices = sorted(self.link_index_to_lane.keys())
         expected = list(range(self.num_nodes))
@@ -181,50 +161,105 @@ class Node:
     def _safe_copy(self, arr):
         return None if arr is None else np.asarray(arr, dtype=np.float32).copy()
 
-    # -------------------------------------------------------------------------
-    # 排放累计
-    # -------------------------------------------------------------------------
+    @staticmethod
+    def _safe_sub_get(sub: Optional[Dict], key, default=0):
+        if not sub:
+            return default
+        try:
+            return sub.get(key, default)
+        except Exception:
+            return default
+
+    def _get_det_sub(self, det_id: str, det_sub_cache: Optional[Dict[str, Dict]] = None) -> Dict:
+        if det_sub_cache is not None:
+            return det_sub_cache.get(det_id, {}) or {}
+        try:
+            return traci.lanearea.getSubscriptionResults(det_id) or {}
+        except Exception:
+            return {}
+
+    def _get_lane_sub(self, lane_id: str, lane_sub_cache: Optional[Dict[str, Dict]] = None) -> Dict:
+        if lane_sub_cache is not None:
+            return lane_sub_cache.get(lane_id, {}) or {}
+        try:
+            return traci.lane.getSubscriptionResults(lane_id) or {}
+        except Exception:
+            return {}
+
+    @staticmethod
+    def _is_truck_type(vtype: str) -> bool:
+        s = str(vtype).strip().lower()
+        return s == "truck" or "truck" in s or s in {"hdv", "lorry"}
+
+    def _get_vehicle_type_cached(self, vid: str) -> str:
+        vtype = self._vehicle_type_cache.get(vid)
+        if vtype is not None:
+            return vtype
+        try:
+            vtype = traci.vehicle.getTypeID(vid)
+        except Exception:
+            vtype = str(getattr(self.config, "DEFAULT_VEHICLE_TYPE", "sedan"))
+        self._vehicle_type_cache[vid] = vtype
+        return vtype
+
+    def _fallback_vehicle_emission_mg(self, vid: str) -> float:
+        if self.emission_lookup is None:
+            return 0.0
+        try:
+            vtype = self._get_vehicle_type_cached(vid)
+            speed_ms = traci.vehicle.getSpeed(vid)
+            accel_ms2 = traci.vehicle.getAcceleration(vid)
+            emission_g = self.emission_lookup.get_emission(
+                vehicle_type=vtype,
+                speed_ms=speed_ms,
+                accel_ms2=accel_ms2,
+                sim_step=self.config.SIM_STEP,
+                pollutant=self.config.EMISSION_POLLUTANT,
+            )
+            return float(emission_g) * 1000.0
+        except Exception:
+            return 0.0
 
     def reset_step_emission(self):
         self.step_emission_accumulator_raw = np.zeros(self.num_nodes, dtype=np.float32)
 
-    def _measure_emission_instant(self) -> np.ndarray:
+    def _measure_emission_instant(
+        self,
+        det_sub_cache: Optional[Dict[str, Dict]] = None,
+        vehicle_step_cache: Optional[Dict[str, Dict[str, Any]]] = None,
+    ) -> np.ndarray:
         raw = []
-        if self.emission_lookup is None:
-            return np.zeros(self.num_nodes, dtype=np.float32)
+
         for det_id in self.detectors:
+            sub = self._get_det_sub(det_id, det_sub_cache)
+            veh_ids = self._safe_sub_get(
+                sub,
+                traci.constants.LAST_STEP_VEHICLE_ID_LIST,
+                (),
+            ) or ()
+
             lane_emission_mg = 0.0
-            try:
-                sub = traci.lanearea.getSubscriptionResults(det_id)
-                veh_ids = sub.get(traci.constants.LAST_STEP_VEHICLE_ID_LIST, ())
-                if not veh_ids:
-                    raw.append(0.0)
-                    continue
-                for vid in veh_ids:
-                    try:
-                        vtype = self._vehicle_type_cache.get(vid)
-                        if vtype is None:
-                            vtype = traci.vehicle.getTypeID(vid)
-                            self._vehicle_type_cache[vid] = vtype
-                        speed_ms = traci.vehicle.getSpeed(vid)
-                        accel_ms2 = traci.vehicle.getAcceleration(vid)
-                        emission_g = self.emission_lookup.get_emission(
-                            vehicle_type=vtype,
-                            speed_ms=speed_ms,
-                            accel_ms2=accel_ms2,
-                            sim_step=self.config.SIM_STEP,
-                            pollutant=self.config.EMISSION_POLLUTANT,
-                        )
-                        lane_emission_mg += emission_g * 1000.0
-                    except traci.exceptions.TraCIException:
-                        continue
-                raw.append(lane_emission_mg)
-            except Exception:
-                raw.append(0.0)
+
+            for vid in veh_ids:
+                if vehicle_step_cache is not None and vid in vehicle_step_cache:
+                    lane_emission_mg += float(vehicle_step_cache[vid].get("emission_mg", 0.0))
+                else:
+                    lane_emission_mg += self._fallback_vehicle_emission_mg(vid)
+
+            raw.append(lane_emission_mg)
+
         return np.asarray(raw, dtype=np.float32)
 
-    def accumulate_step_emission(self):
-        instant_emission = self._measure_emission_instant()
+    def accumulate_step_emission(
+        self,
+        det_sub_cache: Optional[Dict[str, Dict]] = None,
+        vehicle_step_cache: Optional[Dict[str, Dict[str, Any]]] = None,
+    ):
+        # Accumulate emission across multiple SIM_STEP ticks inside one control step.
+        instant_emission = self._measure_emission_instant(
+            det_sub_cache=det_sub_cache,
+            vehicle_step_cache=vehicle_step_cache,
+        )
         self.step_emission_accumulator_raw += instant_emission
 
     def finalize_step_emission(self):
@@ -235,32 +270,34 @@ class Node:
             self.config.CLIP_EMISSION,
         )
 
-    # -------------------------------------------------------------------------
-    # 单项特征测量
-    # -------------------------------------------------------------------------
-
-    def _measure_wave(self):
+    def _measure_wave(self, det_sub_cache: Optional[Dict[str, Dict]] = None):
         raw = []
         for det_id in self.detectors:
-            try:
-                sub = traci.lanearea.getSubscriptionResults(det_id)
-                raw.append(sub.get(traci.constants.LAST_STEP_VEHICLE_NUMBER, 0))
-            except Exception:
-                raw.append(0)
+            sub = self._get_det_sub(det_id, det_sub_cache)
+            raw.append(
+                self._safe_sub_get(
+                    sub,
+                    traci.constants.LAST_STEP_VEHICLE_NUMBER,
+                    0,
+                )
+            )
         raw = np.asarray(raw, dtype=np.float32)
         norm = self._normalize(raw, self.config.WAVE_MAX, self.config.CLIP_WAVE)
         self.last_wave_raw = raw
         self.last_wave_norm = norm
         return raw, norm
 
-    def _measure_queue(self):
+    def _measure_queue(self, lane_sub_cache: Optional[Dict[str, Dict]] = None):
         raw = []
         for lane in self.lanes_in:
-            try:
-                sub = traci.lane.getSubscriptionResults(lane)
-                raw.append(sub.get(traci.constants.LAST_STEP_VEHICLE_HALTING_NUMBER, 0))
-            except Exception:
-                raw.append(0)
+            sub = self._get_lane_sub(lane, lane_sub_cache)
+            raw.append(
+                self._safe_sub_get(
+                    sub,
+                    traci.constants.LAST_STEP_VEHICLE_HALTING_NUMBER,
+                    0,
+                )
+            )
         raw = np.asarray(raw, dtype=np.float32)
         norm = self._normalize(raw, self.config.QUEUE_MAX, self.config.CLIP_QUEUE)
         self.last_queue_raw = raw
@@ -293,68 +330,72 @@ class Node:
         return raw, norm
 
     def cache_speed_limits(self):
-        """reset 时调用一次，缓存所有 lane 的限速"""
         for lane in self.lanes_in:
             try:
                 self._speed_limit_cache[lane] = traci.lane.getMaxSpeed(lane)
             except traci.exceptions.TraCIException:
                 self._speed_limit_cache[lane] = 13.89
 
-    def _measure_speed(self):
+    def _measure_speed(self, lane_sub_cache: Optional[Dict[str, Dict]] = None):
         raw = []
         norm = []
-
         for lane in self.lanes_in:
-            try:
-                avg_speed = traci.lane.getLastStepMeanSpeed(lane)
-                speed_limit = traci.lane.getMaxSpeed(lane)
-                veh_count = traci.lane.getLastStepVehicleNumber(lane)
-
-                raw.append(avg_speed)
-
-                if veh_count == 0:
-                    norm.append(0.0)
-                elif speed_limit > 0:
-                    speed_ratio = min(1.0, avg_speed / speed_limit)
-                    norm.append(1.0 - speed_ratio)
-                else:
-                    norm.append(1.0)
-
-            except traci.exceptions.TraCIException:
-                raw.append(0.0)
+            sub = self._get_lane_sub(lane, lane_sub_cache)
+            avg_speed = float(
+                self._safe_sub_get(
+                    sub,
+                    traci.constants.LAST_STEP_MEAN_SPEED,
+                    0.0,
+                )
+            )
+            veh_count = float(
+                self._safe_sub_get(
+                    sub,
+                    traci.constants.LAST_STEP_VEHICLE_NUMBER,
+                    0.0,
+                )
+            )
+            speed_limit = float(self._speed_limit_cache.get(lane, 13.89))
+            raw.append(avg_speed)
+            if veh_count <= 0:
                 norm.append(0.0)
-
+            elif speed_limit > 0:
+                speed_ratio = min(1.0, avg_speed / speed_limit)
+                norm.append(1.0 - speed_ratio)
+            else:
+                norm.append(1.0)
         raw = np.asarray(raw, dtype=np.float32)
         norm = np.asarray(norm, dtype=np.float32)
-
         self.last_speed_raw = raw
         self.last_speed_norm = norm
         return raw, norm
-
-    def _measure_truck_ratio(self):
+    
+    def _measure_truck_ratio(
+        self,
+        lane_sub_cache: Optional[Dict[str, Dict]] = None,
+        vehicle_step_cache: Optional[Dict[str, Dict[str, Any]]] = None,
+    ):
         raw = []
         for lane in self.lanes_in:
-            try:
-                sub = traci.lane.getSubscriptionResults(lane)
-                veh_ids = sub.get(traci.constants.LAST_STEP_VEHICLE_ID_LIST, ())
-                if not veh_ids:
-                    raw.append(0.0)
-                    continue
-                total_count = len(veh_ids)
-                truck_count = 0
-                for vid in veh_ids:
-                    vtype = self._vehicle_type_cache.get(vid)
-                    if vtype is None:
-                        try:
-                            vtype = traci.vehicle.getTypeID(vid)
-                            self._vehicle_type_cache[vid] = vtype
-                        except traci.exceptions.TraCIException:
-                            continue
-                    if vtype == "truck":
-                        truck_count += 1
-                raw.append(truck_count / total_count)
-            except Exception:
+            sub = self._get_lane_sub(lane, lane_sub_cache)
+            veh_ids = self._safe_sub_get(
+                sub,
+                traci.constants.LAST_STEP_VEHICLE_ID_LIST,
+                (),
+            ) or ()
+            if not veh_ids:
                 raw.append(0.0)
+                continue
+            truck_count = 0
+            for vid in veh_ids:
+                if vehicle_step_cache is not None and vid in vehicle_step_cache:
+                    if bool(vehicle_step_cache[vid].get("is_truck", False)):
+                        truck_count += 1
+                else:
+                    vtype = self._get_vehicle_type_cached(vid)
+                    if self._is_truck_type(vtype):
+                        truck_count += 1
+            raw.append(float(truck_count) / max(float(len(veh_ids)), 1.0))
         raw = np.asarray(raw, dtype=np.float32)
         norm = self._normalize(raw, self.config.TRUCK_RATIO_MAX)
         self.last_truck_ratio_raw = raw
@@ -379,42 +420,39 @@ class Node:
         self.last_phase_norm = phase_onehot.copy()
         return self.last_phase_raw.copy(), self.last_phase_norm.copy()
 
-    # -------------------------------------------------------------------------
-    # 结构化状态输出
-    # -------------------------------------------------------------------------
-
-    def get_state_dict(self) -> Dict[str, Dict[str, np.ndarray]]:
+    def get_state_dict(
+        self,
+        lane_sub_cache: Optional[Dict[str, Dict]] = None,
+        det_sub_cache: Optional[Dict[str, Dict]] = None,
+        vehicle_step_cache: Optional[Dict[str, Dict[str, Any]]] = None,
+    ) -> Dict[str, Dict[str, np.ndarray]]:
+        # Returns both raw and normalized features with stable key schema.
         state_raw = {}
         state_norm = {}
-
-        raw, norm = self._measure_wave()
+        raw, norm = self._measure_wave(det_sub_cache=det_sub_cache)
         state_raw["wave"] = raw
         state_norm["wave"] = norm
-
-        raw, norm = self._measure_queue()
+        raw, norm = self._measure_queue(lane_sub_cache=lane_sub_cache)
         state_raw["queue"] = raw
         state_norm["queue"] = norm
-
-        raw, norm = self._measure_wait()
+        raw, norm = self._measure_wait(det_sub_cache=det_sub_cache)
         state_raw["wait"] = raw
         state_norm["wait"] = norm
-
-        raw, norm = self._measure_speed()
+        raw, norm = self._measure_speed(lane_sub_cache=lane_sub_cache)
         state_raw["speed"] = raw
         state_norm["speed"] = norm
-
-        raw, norm = self._measure_truck_ratio()
+        raw, norm = self._measure_truck_ratio(
+            lane_sub_cache=lane_sub_cache,
+            vehicle_step_cache=vehicle_step_cache,
+        )
         state_raw["truck_ratio"] = raw
         state_norm["truck_ratio"] = norm
-
         raw, norm = self._get_emission_state()
         state_raw["emission"] = raw
         state_norm["emission"] = norm
-
         raw, norm = self._get_phase_state()
         state_raw["phase"] = raw
         state_norm["phase"] = norm
-
         state = {"raw": state_raw, "norm": state_norm}
         self.last_state_dict = {
             "raw": {k: v.copy() for k, v in state_raw.items()},
@@ -422,21 +460,22 @@ class Node:
         }
         return state
 
-    def get_lower_state_dict(self) -> Dict[str, Dict[str, np.ndarray]]:
-        """
-        返回供 env 组织 per_tls_obs 使用的状态字典。
-
-        说明：
-        - 下层模型真正消费的仍然只是 wave / speed / truck_ratio
-        - 这里返回完整 raw / norm 字典，是为了让 env.get_tls_node_feature_rows()
-          在记录节点级 CSV 时拿到真实 queue / wait / emission，而不是补零
-        """
-        state = self.get_state_dict()
+    def get_lower_state_dict(
+        self,
+        lane_sub_cache: Optional[Dict[str, Dict]] = None,
+        det_sub_cache: Optional[Dict[str, Dict]] = None,
+        vehicle_step_cache: Optional[Dict[str, Dict[str, Any]]] = None,
+    ) -> Dict[str, Dict[str, np.ndarray]]:
+        state = self.get_state_dict(
+            lane_sub_cache=lane_sub_cache,
+            det_sub_cache=det_sub_cache,
+            vehicle_step_cache=vehicle_step_cache,
+        )
         return {
             "raw": {k: v.copy() for k, v in state["raw"].items()},
             "norm": {k: v.copy() for k, v in state["norm"].items()},
         }
-
+    
     def _sum_or_zero(self, arr):
         return float(np.sum(arr)) if arr is not None else 0.0
 

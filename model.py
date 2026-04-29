@@ -1,7 +1,4 @@
 # -*- coding: utf-8 -*-
-"""model.py
-Thin wrapper that exposes a unified interface to main.py.
-"""
 
 from __future__ import annotations
 from typing import Dict, Any, Optional, Tuple, List
@@ -11,19 +8,18 @@ import torch
 from node_model import LowerA2CAgent
 from network_model import UpperPPOAgent
 
-
+# Thin facade around lower/upper agents for main.py.
 def get_device() -> torch.device:
     return torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-
 def current_weight_dict_from_matrix(tls_ids: List[str], weight_matrix: np.ndarray) -> Dict[str, np.ndarray]:
     return {tl_id: np.asarray(weight_matrix[i], dtype=np.float32) for i, tl_id in enumerate(tls_ids)}
-
 
 class HierarchicalTrafficModel:
     def __init__(self, config, device: Optional[torch.device] = None):
         self.config = config
         self.device = device or get_device()
+        # Lower: local intersection control (A2C), Upper: network coordination (PPO).
         self.lower_agent = LowerA2CAgent(config=self.config, device=self.device)
         self.upper_agent = UpperPPOAgent(config=self.config, device=self.device)
 
@@ -53,7 +49,6 @@ class HierarchicalTrafficModel:
 
     def act_upper(self, network_obs: Dict[str, Any], deterministic: bool = False) -> Dict[str, Any]:
         out = self.upper_agent.act_upper(network_obs=network_obs, deterministic=deterministic)
-        # Keep existing main.py behavior: it usually expects current_upper_out['weight_matrix'].
         if isinstance(out.get("weight_matrix"), torch.Tensor):
             out["W"] = out["weight_matrix"]
             out["weight_matrix"] = out["weight_matrix"].detach().cpu().numpy().astype(np.float32)

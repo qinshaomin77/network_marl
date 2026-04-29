@@ -1,14 +1,4 @@
 # -*- coding: utf-8 -*-
-"""network_model.py
-Upper layer PPO agent with edge-level upstream/downstream GAT.
-Input network_obs keys:
-    X_edge      [E, 3]
-    A_edge_up   [E, E]
-    A_edge_down [E, E]
-    edge_to_tls [N_tls, E]
-Output:
-    weight_matrix [N_tls, 2]
-"""
 
 from __future__ import annotations
 from typing import Dict, Any, Tuple, Optional, List
@@ -19,7 +9,7 @@ import torch.nn.functional as F
 
 from model_layers import orthogonal_init, _as_tensor, RelationGATLayer
 
-
+# Upper encoder over directed edge graph (upstream/downstream relations).
 class UpperEdgeGraphEncoder(nn.Module):
     def __init__(self, config):
         super().__init__()
@@ -52,13 +42,8 @@ class UpperEdgeGraphEncoder(nn.Module):
         H_down = self.down_gat(H0, A_down)
         return self.fusion(torch.cat([H0, H_up, H_down], dim=-1))
 
-
 class UpperCoordinatorNet(nn.Module):
-    """PPO actor.
-
-    Samples raw_delta_e ~ N(mu_e, sigma), maps p_e=sigmoid(raw_delta_e),
-    then aggregates edge weights to node weights.
-    """
+    # PPO actor: samples edge preferences, then aggregates to tls-level weights.
 
     def __init__(self, config):
         super().__init__()
@@ -81,7 +66,6 @@ class UpperCoordinatorNet(nn.Module):
         return torch.distributions.Normal(mu, std), Z
 
     def _build_weights(self, raw_delta: torch.Tensor, edge_to_tls: torch.Tensor, edge_weight: Optional[torch.Tensor] = None) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        # raw_delta: [B,E], edge_to_tls: [N,E] or [B,N,E]
         if edge_to_tls.dim() == 2:
             edge_to_tls = edge_to_tls.unsqueeze(0).expand(raw_delta.size(0), -1, -1)
         p = torch.sigmoid(raw_delta).clamp(self.w_min, self.w_max)  # emission preference [B,E]
@@ -127,7 +111,6 @@ class UpperCoordinatorNet(nn.Module):
         W_tls, W_edge, p = self._build_weights(raw_delta, edge_to_tls, edge_weight)
         return log_prob, entropy, W_tls, W_edge, p
 
-
 class UpperValueNet(nn.Module):
     def __init__(self, config):
         super().__init__()
@@ -146,8 +129,8 @@ class UpperValueNet(nn.Module):
         h_max = Z.max(dim=1).values
         return self.value_head(torch.cat([h_mean, h_max], dim=-1)).squeeze(-1)
 
-
 class UpperPPOAgent:
+    # Upper-level PPO update logic.
     def __init__(self, config, device: Optional[torch.device] = None):
         self.config = config
         self.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -177,7 +160,6 @@ class UpperPPOAgent:
             out = self.actor.sample_action(t["X_edge"], t["A_edge_up"], t["A_edge_down"], t["edge_to_tls"], t["edge_weight"], deterministic)
             value = self.critic(t["X_edge"], t["A_edge_up"], t["A_edge_down"]).squeeze(0)
         out["value"] = value
-        # numpy matrix for env/main convenience
         out["weight_matrix_np"] = out["weight_matrix"].detach().cpu().numpy().astype(np.float32)
         return out
 
